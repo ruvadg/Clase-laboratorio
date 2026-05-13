@@ -1,41 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { LabState, ProposalWithVoteState } from "@/lib/types";
+import { Countdown } from "./Countdown";
 
 type ApiList = {
   proposals: ProposalWithVoteState[];
   state: LabState;
 };
 
+type Action = "close" | "schedule" | "reopen" | "reset" | "export";
+
+const PRESETS: { label: string; ms: number }[] = [
+  { label: "5 min", ms: 5 * 60_000 },
+  { label: "15 min", ms: 15 * 60_000 },
+  { label: "30 min", ms: 30 * 60_000 },
+  { label: "1 h", ms: 60 * 60_000 },
+  { label: "4 h", ms: 4 * 60 * 60_000 },
+  { label: "24 h", ms: 24 * 60 * 60_000 },
+  { label: "7 d", ms: 7 * 24 * 60 * 60_000 },
+];
+
+const POLL_INTERVAL_MS = 6000;
+
 export function AdminPanel() {
   const [password, setPassword] = useState("");
   const [data, setData] = useState<ApiList | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pendingAction, setPendingAction] = useState<
-    null | "close" | "reopen" | "reset"
-  >(null);
-  const [busy, setBusy] = useState<null | "close" | "reopen" | "reset">(null);
+  const [pendingAction, setPendingAction] = useState<null | Action>(null);
+  const [pendingDurationMs, setPendingDurationMs] = useState<number | null>(null);
+  const [busy, setBusy] = useState<null | Action>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/proposals", { cache: "no-store" });
       const d = (await res.json()) as ApiList;
       setData(d);
     } catch {
-      // fail silently in admin view
+      /* ignore */
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
-  function requireConfirm(action: "close" | "reopen" | "reset") {
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  function requireConfirm(action: Action, durationMs?: number) {
     setError(null);
     setSuccess(null);
     if (!password) {
@@ -43,20 +64,54 @@ export function AdminPanel() {
       return;
     }
     setPendingAction(action);
+    setPendingDurationMs(durationMs ?? null);
   }
 
-  async function runAction(action: "close" | "reopen" | "reset") {
+  async function runAction(action: Action, durationMs?: number) {
     setError(null);
     setSuccess(null);
     setBusy(action);
     try {
-      const endpoint = action === "reset" ? "/api/admin/reset" : "/api/admin/close";
-      const body =
-        action === "reset"
-          ? { password }
-          : action === "reopen"
-            ? { password, action: "reopen" }
-            : { password };
+      if (action === "export") {
+        const res = await fetch("/api/admin/export", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          setError(errBody?.error ?? "No pudimos exportar.");
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `masterlab-laboratorio-${new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setSuccess("CSV descargado.");
+        return;
+      }
+
+      const endpoint =
+        action === "reset" ? "/api/admin/reset" : "/api/admin/close";
+      let body: Record<string, unknown>;
+      if (action === "reset") {
+        body = { password };
+      } else if (action === "reopen") {
+        body = { password, action: "reopen" };
+      } else if (action === "schedule") {
+        body = { password, action: "schedule", durationMs };
+      } else {
+        body = { password };
+      }
+
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -65,30 +120,36 @@ export function AdminPanel() {
       const result = await res.json();
       if (!res.ok) {
         setError(result?.error ?? "No pudimos completar la acción.");
-      } else if (action === "close") {
+        return;
+      }
+
+      if (action === "close") {
         if (result.winner) {
           setSuccess(`Ganadora declarada: "${result.winner.title}".`);
         } else {
           setSuccess("Votación cerrada (no había propuestas con votos).");
         }
-        await refresh();
+      } else if (action === "schedule") {
+        setSuccess("Cierre programado. Los alumnos verán la cuenta atrás.");
       } else if (action === "reopen") {
         setSuccess("Votación reabierta. Ya se puede proponer y votar.");
-        await refresh();
-      } else {
+      } else if (action === "reset") {
         setSuccess("Todo reiniciado. Propuestas y votos a cero.");
-        await refresh();
       }
+      await refresh();
     } catch {
       setError("Error de red. Intenta de nuevo.");
     } finally {
       setBusy(null);
       setPendingAction(null);
+      setPendingDurationMs(null);
     }
   }
 
   const state = data?.state;
   const isClosed = state?.status === "closed";
+  const deadline =
+    state?.status === "open" && state.deadline ? state.deadline : null;
   const proposals = data?.proposals ?? [];
   const totalVotes = proposals.reduce((acc, p) => acc + p.votes, 0);
   const leader = proposals.find((p) => p.votes > 0) ?? null;
@@ -105,8 +166,8 @@ export function AdminPanel() {
           Control del laboratorio
         </h1>
         <p className="mt-2 text-sm text-masterlab-ink/60">
-          Cierra la votación cuando se acabe el tiempo para declarar la clase
-          ganadora, o reinicia todo para empezar una nueva ronda.
+          Programa el cierre, declara manualmente al ganador o reinicia la ronda.
+          También puedes exportar los resultados a CSV.
         </p>
 
         <div className="mt-5 grid grid-cols-3 gap-3 text-center">
@@ -118,6 +179,15 @@ export function AdminPanel() {
           <Metric label="Propuestas" value={loading ? "—" : `${proposals.length}`} />
           <Metric label="Votos" value={loading ? "—" : `${totalVotes}`} />
         </div>
+
+        {!isClosed && deadline && (
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-masterlab-blue/30 bg-masterlab-blue/5 px-4 py-3">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-blue">
+              Cierre programado
+            </span>
+            <Countdown deadline={deadline} onExpire={refresh} variant="compact" />
+          </div>
+        )}
 
         {isClosed && winner && (
           <div className="mt-4 rounded-xl border border-masterlab-blue/30 bg-masterlab-blue/5 p-4">
@@ -165,17 +235,69 @@ export function AdminPanel() {
           />
         </label>
 
+        {!isClosed && (
+          <div className="mt-5">
+            <h3 className="font-display text-sm font-semibold text-masterlab-ink">
+              Programar cierre
+            </h3>
+            <p className="mt-1 text-xs text-masterlab-ink/60">
+              Elige cuánto durará la votación. Al llegar a cero, se cierra sola y
+              se muestra el ganador con animación.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => requireConfirm("schedule", preset.ms)}
+                  disabled={busy !== null}
+                  className="rounded-full border border-masterlab-line bg-white px-3 py-1.5 text-xs font-semibold text-masterlab-ink transition hover:border-masterlab-blue hover:text-masterlab-blue disabled:opacity-50"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {pendingAction === "schedule" && pendingDurationMs && (
+              <div className="mt-3 space-y-2 rounded-lg border border-masterlab-blue/30 bg-masterlab-blue/5 p-2 text-xs text-masterlab-ink">
+                <p>
+                  ¿Programar cierre en{" "}
+                  <strong>{formatDuration(pendingDurationMs)}</strong>?
+                  {deadline && " Sobrescribirá el cierre ya programado."}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => runAction("schedule", pendingDurationMs)}
+                    disabled={busy !== null}
+                    className="flex-1 rounded-md bg-masterlab-blue px-2 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {busy === "schedule" ? "..." : "Sí, programar"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPendingAction(null);
+                      setPendingDurationMs(null);
+                    }}
+                    disabled={busy !== null}
+                    className="flex-1 rounded-md border border-masterlab-line bg-white px-2 py-1.5 text-xs font-semibold text-masterlab-ink/70 transition hover:bg-masterlab-mist"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           {!isClosed ? (
             <ActionCard
               tone="primary"
-              title="Cerrar votación"
-              description="Declara la clase ganadora con la propuesta más votada y bloquea más votos."
+              title="Cerrar votación ya"
+              description="Declara la ganadora inmediatamente con la propuesta más votada."
               cta="Declarar ganador"
               loading={busy === "close"}
               disabled={busy !== null}
               confirm={pendingAction === "close"}
-              confirmLabel="¿Cerrar la ronda?"
+              confirmLabel="¿Cerrar la ronda ahora?"
               onClick={() => requireConfirm("close")}
               onConfirm={() => runAction("close")}
               onCancel={() => setPendingAction(null)}
@@ -195,6 +317,20 @@ export function AdminPanel() {
               onCancel={() => setPendingAction(null)}
             />
           )}
+
+          <ActionCard
+            tone="ghost"
+            title="Exportar resultados"
+            description="Descarga un CSV con todas las propuestas, votos y porcentajes."
+            cta="Descargar CSV"
+            loading={busy === "export"}
+            disabled={busy !== null}
+            confirm={false}
+            confirmLabel=""
+            onClick={() => runAction("export")}
+            onConfirm={() => runAction("export")}
+            onCancel={() => {}}
+          />
 
           <ActionCard
             tone="danger"
@@ -224,6 +360,15 @@ export function AdminPanel() {
       </div>
     </div>
   );
+}
+
+function formatDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.round(hours / 24);
+  return `${days} d`;
 }
 
 function Metric({
@@ -264,7 +409,7 @@ function ActionCard({
   onConfirm,
   onCancel,
 }: {
-  tone: "primary" | "danger";
+  tone: "primary" | "danger" | "ghost";
   title: string;
   description: string;
   cta: string;
@@ -276,16 +421,20 @@ function ActionCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const primary = tone === "primary";
-  const baseBtn = primary
-    ? "bg-masterlab-ink text-white hover:bg-masterlab-blue"
-    : "bg-white text-red-700 border border-red-200 hover:bg-red-50";
-  const confirmBtn = primary
-    ? "bg-masterlab-blue hover:brightness-110"
-    : "bg-red-600 hover:bg-red-700";
-  const confirmBox = primary
-    ? "border-masterlab-blue/30 bg-masterlab-blue/5 text-masterlab-ink"
-    : "border-red-200 bg-red-50 text-red-700";
+  const baseBtn =
+    tone === "primary"
+      ? "bg-masterlab-ink text-white hover:bg-masterlab-blue"
+      : tone === "ghost"
+        ? "border border-masterlab-line bg-white text-masterlab-ink hover:border-masterlab-blue hover:text-masterlab-blue"
+        : "bg-white text-red-700 border border-red-200 hover:bg-red-50";
+  const confirmBtn =
+    tone === "primary"
+      ? "bg-masterlab-blue hover:brightness-110"
+      : "bg-red-600 hover:bg-red-700";
+  const confirmBox =
+    tone === "primary"
+      ? "border-masterlab-blue/30 bg-masterlab-blue/5 text-masterlab-ink"
+      : "border-red-200 bg-red-50 text-red-700";
 
   return (
     <div className="flex flex-col rounded-xl border border-masterlab-line bg-white p-4">
@@ -300,7 +449,7 @@ function ActionCard({
           disabled={disabled}
           className={`mt-3 inline-flex w-full items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${baseBtn}`}
         >
-          {cta}
+          {loading ? "..." : cta}
         </button>
       ) : (
         <div className={`mt-3 space-y-2 rounded-lg border p-2 text-xs ${confirmBox}`}>

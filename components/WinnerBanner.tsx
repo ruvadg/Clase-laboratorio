@@ -39,24 +39,31 @@ function makeConfetti(count: number): ConfettiPiece[] {
 export function WinnerBanner({
   winner,
   totalVotes,
+  showConfetti = true,
 }: {
   winner: Proposal;
   totalVotes: number;
+  showConfetti?: boolean;
 }) {
   const confetti = useMemo(() => makeConfetti(48), []);
-  const [showConfetti, setShowConfetti] = useState(true);
+  const [confettiVisible, setConfettiVisible] = useState(showConfetti);
 
   useEffect(() => {
-    const t = setTimeout(() => setShowConfetti(false), 6500);
+    if (!showConfetti) {
+      setConfettiVisible(false);
+      return;
+    }
+    setConfettiVisible(true);
+    const t = setTimeout(() => setConfettiVisible(false), 6500);
     return () => clearTimeout(t);
-  }, []);
+  }, [showConfetti]);
 
   const share =
     totalVotes > 0 ? Math.round((winner.votes / totalVotes) * 100) : 100;
 
   return (
     <div className="relative">
-      {showConfetti && (
+      {confettiVisible && (
         <div
           className="pointer-events-none absolute inset-x-0 -top-4 z-10 h-[120vh] overflow-hidden"
           aria-hidden

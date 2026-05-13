@@ -162,6 +162,21 @@ export async function getLabState(): Promise<LabState> {
   return (await store.getState()) ?? { status: "open" };
 }
 
+export async function getLabStateWithAutoClose(): Promise<LabState> {
+  const state = await getLabState();
+  if (state.status === "open" && state.deadline && Date.now() >= state.deadline) {
+    const result = await closeVoting();
+    return result.state;
+  }
+  return state;
+}
+
+export async function scheduleClose(deadline: number): Promise<LabState> {
+  const state: LabState = { status: "open", deadline };
+  await store.setState(state);
+  return state;
+}
+
 export async function createProposal(input: {
   title: string;
   description: string;
@@ -171,7 +186,7 @@ export async function createProposal(input: {
   | { ok: true; proposal: Proposal }
   | { ok: false; reason: "already-proposed" | "closed" }
 > {
-  const state = await getLabState();
+  const state = await getLabStateWithAutoClose();
   if (state.status === "closed") return { ok: false, reason: "closed" };
   const existing = await store.getAuthor(input.authorHash);
   if (existing) {
@@ -199,7 +214,7 @@ export async function voteFor(
   | { ok: true; proposal: Proposal }
   | { ok: false; reason: "already-voted" | "not-found" | "closed" }
 > {
-  const state = await getLabState();
+  const state = await getLabStateWithAutoClose();
   if (state.status === "closed") return { ok: false, reason: "closed" };
   const prevVote = await store.getVote(voterHash);
   if (prevVote) return { ok: false, reason: "already-voted" };

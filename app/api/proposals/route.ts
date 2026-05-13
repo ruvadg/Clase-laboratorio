@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   createProposal,
-  getLabState,
+  getLabStateWithAutoClose,
   getMyProposalId,
   getMyVotedId,
   listProposals,
@@ -18,11 +18,11 @@ const MAX_DESCRIPTION = 600;
 
 export async function GET(req: NextRequest) {
   const identity = getIdentityHash(req);
-  const [proposals, myProposalId, myVoteId, state] = await Promise.all([
+  const state = await getLabStateWithAutoClose();
+  const [proposals, myProposalId, myVoteId] = await Promise.all([
     listProposals(),
     getMyProposalId(identity),
     getMyVotedId(identity),
-    getLabState(),
   ]);
   const enriched: ProposalWithVoteState[] = proposals.map((p) => ({
     ...p,

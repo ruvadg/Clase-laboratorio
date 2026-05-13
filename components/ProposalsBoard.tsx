@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LabState, ProposalWithVoteState } from "@/lib/types";
 import { WinnerBanner } from "./WinnerBanner";
+import { Countdown } from "./Countdown";
 
 type ApiList = {
   proposals: ProposalWithVoteState[];
@@ -15,6 +16,7 @@ const NAME_MAX = 60;
 const TITLE_MAX = 120;
 const DESC_MAX = 600;
 const NAME_STORAGE_KEY = "masterlab-author-name";
+const POLL_INTERVAL_MS = 6000;
 
 export function ProposalsBoard() {
   const [state, setState] = useState<ApiList | null>(null);
@@ -26,6 +28,8 @@ export function ProposalsBoard() {
   const [voting, setVoting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const wasOpenRef = useRef(false);
+  const [justClosed, setJustClosed] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -34,24 +38,49 @@ export function ProposalsBoard() {
     }
   }, []);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/proposals", { cache: "no-store" });
       const data = (await res.json()) as ApiList;
-      setState(data);
+      setState((prev) => {
+        if (prev?.state.status === "open" && data.state.status === "closed") {
+          setJustClosed(true);
+          setTimeout(() => setJustClosed(false), 7000);
+        }
+        return data;
+      });
+      wasOpenRef.current = data.state.status === "open";
     } catch {
       setError("No pudimos cargar las propuestas. Recarga la página.");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, POLL_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
 
   const isClosed = state?.state.status === "closed";
   const winnerId = state?.state.status === "closed" ? state.state.winnerId : null;
+  const deadline =
+    state?.state.status === "open" && state.state.deadline
+      ? state.state.deadline
+      : null;
   const winner = useMemo(
     () =>
       winnerId ? state?.proposals.find((p) => p.id === winnerId) ?? null : null,
@@ -61,7 +90,15 @@ export function ProposalsBoard() {
     () => (state?.proposals ?? []).reduce((acc, p) => acc + p.votes, 0),
     [state],
   );
+  const maxVotes = useMemo(
+    () => Math.max(0, ...(state?.proposals ?? []).map((p) => p.votes)),
+    [state],
+  );
   const topId = useMemo(() => state?.proposals[0]?.id, [state]);
+  const podium = useMemo(
+    () => (state?.proposals ?? []).slice(0, 3),
+    [state],
+  );
 
   async function submitProposal(e: React.FormEvent) {
     e.preventDefault();
@@ -125,11 +162,21 @@ export function ProposalsBoard() {
   const proposals = state?.proposals ?? [];
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10 sm:space-y-12">
       {isClosed && winner ? (
-        <WinnerBanner winner={winner} totalVotes={totalVotes} />
+        <div className="space-y-6">
+          <WinnerBanner
+            key={justClosed ? "fresh" : "stable"}
+            winner={winner}
+            totalVotes={totalVotes}
+            showConfetti={justClosed}
+          />
+          {podium.length > 1 && (
+            <Podium podium={podium} totalVotes={totalVotes} />
+          )}
+        </div>
       ) : isClosed ? (
-        <section className="animate-winner-rise rounded-3xl border border-masterlab-line bg-white p-8 text-center shadow-soft sm:p-10">
+        <section className="animate-winner-rise rounded-3xl border border-masterlab-line bg-white p-7 text-center shadow-soft sm:p-10">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-masterlab-blue">
             / votación cerrada
           </p>
@@ -141,12 +188,12 @@ export function ProposalsBoard() {
           </p>
         </section>
       ) : (
-        <section className="relative overflow-hidden rounded-3xl border border-masterlab-line bg-white p-8 shadow-soft sm:p-10">
+        <section className="relative overflow-hidden rounded-3xl border border-masterlab-line bg-white p-7 shadow-soft sm:p-10">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-masterlab-blue/10 blur-3xl" />
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-masterlab-blue">
             / laboratorio
           </p>
-          <h1 className="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight text-masterlab-ink sm:text-5xl">
+          <h1 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-tight text-masterlab-ink sm:text-5xl">
             Propón la próxima clase del{" "}
             <span className="italic font-medium text-masterlab-blue">laboratorio</span>.
           </h1>
@@ -159,6 +206,11 @@ export function ProposalsBoard() {
             <Badge>1 voto por persona</Badge>
             <Badge>Resultados en vivo</Badge>
           </div>
+          {deadline && (
+            <div className="mt-6">
+              <Countdown deadline={deadline} onExpire={refresh} />
+            </div>
+          )}
         </section>
       )}
 
@@ -237,7 +289,7 @@ export function ProposalsBoard() {
         </div>
 
         <div className="lg:col-span-3">
-          <div className="flex items-end justify-between">
+          <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h2 className="font-display text-xl font-semibold text-masterlab-ink">
                 Propuestas
@@ -248,9 +300,14 @@ export function ProposalsBoard() {
                   : "Vota una. La más votada será la próxima clase del laboratorio."}
               </p>
             </div>
-            <span className="rounded-full border border-masterlab-line bg-white px-3 py-1 text-xs text-masterlab-ink/60">
-              {proposals.length} {proposals.length === 1 ? "idea" : "ideas"}
-            </span>
+            <div className="flex items-center gap-2">
+              {!isClosed && deadline && (
+                <Countdown deadline={deadline} onExpire={refresh} variant="compact" />
+              )}
+              <span className="rounded-full border border-masterlab-line bg-white px-3 py-1 text-xs text-masterlab-ink/60">
+                {proposals.length} {proposals.length === 1 ? "idea" : "ideas"}
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -272,6 +329,8 @@ export function ProposalsBoard() {
                   disabled={isClosed || hasVoted || voting === p.id}
                   loading={voting === p.id}
                   hasVoted={hasVoted}
+                  totalVotes={totalVotes}
+                  maxVotes={maxVotes}
                   onVote={() => castVote(p.id)}
                 />
               ))}
@@ -351,6 +410,8 @@ function ProposalCard({
   disabled,
   loading,
   hasVoted,
+  totalVotes,
+  maxVotes,
   onVote,
 }: {
   proposal: ProposalWithVoteState;
@@ -361,6 +422,8 @@ function ProposalCard({
   disabled: boolean;
   loading: boolean;
   hasVoted: boolean;
+  totalVotes: number;
+  maxVotes: number;
   onVote: () => void;
 }) {
   const borderClass = isWinner
@@ -369,91 +432,174 @@ function ProposalCard({
       ? "border-masterlab-blue/40 ring-1 ring-masterlab-blue/20"
       : "border-masterlab-line";
 
+  const sharePct = totalVotes > 0 ? Math.round((proposal.votes / totalVotes) * 100) : 0;
+  const barPct = maxVotes > 0 ? Math.round((proposal.votes / maxVotes) * 100) : 0;
+
   return (
     <article
-      className={`group relative flex animate-pop-in items-stretch gap-4 rounded-2xl border bg-white p-4 shadow-soft transition ${borderClass}`}
+      className={`group relative animate-pop-in overflow-hidden rounded-2xl border bg-white p-4 shadow-soft transition ${borderClass}`}
     >
-      <div className="flex flex-col items-center justify-center rounded-xl bg-masterlab-mist px-3 py-2 text-center">
-        <span className="font-display text-2xl font-semibold tabular-nums text-masterlab-ink">
-          {proposal.votes}
-        </span>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/50">
-          votos
-        </span>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/40">
-            #{rank}
-          </span>
-          {isWinner && (
-            <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
-              Ganadora
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
+        <div className="flex items-center justify-between gap-3 sm:flex-col sm:justify-center">
+          <div className="flex flex-col items-center justify-center rounded-xl bg-masterlab-mist px-3 py-2 text-center min-w-[64px]">
+            <span className="font-display text-2xl font-semibold tabular-nums text-masterlab-ink">
+              {proposal.votes}
             </span>
-          )}
-          {!isWinner && isTop && (
-            <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
-              En cabeza
+            <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/50">
+              votos
             </span>
-          )}
-          {proposal.mineToEdit && (
-            <span className="rounded-full border border-masterlab-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/60">
-              Tu propuesta
-            </span>
-          )}
-          {proposal.votedByMe && (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-700">
-              Tu voto
+          </div>
+          {totalVotes > 0 && (
+            <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/40 sm:mt-1">
+              {sharePct}%
             </span>
           )}
         </div>
-        <h3 className="mt-1 font-display text-base font-semibold leading-snug text-masterlab-ink">
-          {proposal.title}
-        </h3>
-        {proposal.authorName && (
-          <p className="mt-0.5 text-xs text-masterlab-ink/50">
-            por <span className="text-masterlab-ink/80">{proposal.authorName}</span>
-          </p>
-        )}
-        {proposal.description && (
-          <p className="mt-1 whitespace-pre-wrap text-sm text-masterlab-ink/70">
-            {proposal.description}
-          </p>
-        )}
-      </div>
 
-      <div className="flex items-center">
-        <button
-          onClick={onVote}
-          disabled={disabled || proposal.votedByMe}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-            proposal.votedByMe
-              ? "bg-emerald-50 text-emerald-700"
-              : isClosed
-                ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
-                : hasVoted
-                  ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
-                  : "bg-masterlab-ink text-white hover:bg-masterlab-blue"
-          }`}
-          aria-label={`Votar por ${proposal.title}`}
-        >
-          {proposal.votedByMe ? (
-            <>
-              <Check /> Votado
-            </>
-          ) : isClosed ? (
-            "Cerrada"
-          ) : loading ? (
-            "..."
-          ) : (
-            <>
-              <Up /> Votar
-            </>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/40">
+              #{rank}
+            </span>
+            {isWinner && (
+              <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
+                Ganadora
+              </span>
+            )}
+            {!isWinner && isTop && (
+              <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
+                En cabeza
+              </span>
+            )}
+            {proposal.mineToEdit && (
+              <span className="rounded-full border border-masterlab-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/60">
+                Tu propuesta
+              </span>
+            )}
+            {proposal.votedByMe && (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-700">
+                Tu voto
+              </span>
+            )}
+          </div>
+          <h3 className="mt-1 font-display text-base font-semibold leading-snug text-masterlab-ink">
+            {proposal.title}
+          </h3>
+          {proposal.authorName && (
+            <p className="mt-0.5 text-xs text-masterlab-ink/50">
+              por <span className="text-masterlab-ink/80">{proposal.authorName}</span>
+            </p>
           )}
-        </button>
+          {proposal.description && (
+            <p className="mt-1 whitespace-pre-wrap text-sm text-masterlab-ink/70">
+              {proposal.description}
+            </p>
+          )}
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-masterlab-mist">
+            <div
+              className={`h-full rounded-full transition-[width] duration-700 ease-out ${
+                isWinner || isTop ? "bg-masterlab-blue" : "bg-masterlab-ink/40"
+              }`}
+              style={{ width: `${barPct}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center sm:items-center">
+          <button
+            onClick={onVote}
+            disabled={disabled || proposal.votedByMe}
+            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition sm:w-auto ${
+              proposal.votedByMe
+                ? "bg-emerald-50 text-emerald-700"
+                : isClosed
+                  ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
+                  : hasVoted
+                    ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
+                    : "bg-masterlab-ink text-white hover:bg-masterlab-blue"
+            }`}
+            aria-label={`Votar por ${proposal.title}`}
+          >
+            {proposal.votedByMe ? (
+              <>
+                <Check /> Votado
+              </>
+            ) : isClosed ? (
+              "Cerrada"
+            ) : loading ? (
+              "..."
+            ) : (
+              <>
+                <Up /> Votar
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </article>
+  );
+}
+
+function Podium({
+  podium,
+  totalVotes,
+}: {
+  podium: ProposalWithVoteState[];
+  totalVotes: number;
+}) {
+  const [first, second, third] = podium;
+  return (
+    <section className="rounded-2xl border border-masterlab-line bg-white p-5 shadow-soft sm:p-6">
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-masterlab-ink/50">
+        / podio
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        {second && <PodiumCard place={2} proposal={second} totalVotes={totalVotes} />}
+        {first && (
+          <PodiumCard place={1} proposal={first} totalVotes={totalVotes} highlighted />
+        )}
+        {third && <PodiumCard place={3} proposal={third} totalVotes={totalVotes} />}
+      </div>
+    </section>
+  );
+}
+
+function PodiumCard({
+  place,
+  proposal,
+  totalVotes,
+  highlighted,
+}: {
+  place: 1 | 2 | 3;
+  proposal: ProposalWithVoteState;
+  totalVotes: number;
+  highlighted?: boolean;
+}) {
+  const share = totalVotes > 0 ? Math.round((proposal.votes / totalVotes) * 100) : 0;
+  const medal = place === 1 ? "Oro" : place === 2 ? "Plata" : "Bronce";
+  return (
+    <div
+      className={`relative flex flex-col rounded-xl border p-4 ${
+        highlighted
+          ? "order-first border-masterlab-blue/40 bg-masterlab-blue/5 sm:order-none"
+          : "border-masterlab-line bg-white"
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/50">
+          #{place} · {medal}
+        </span>
+        <span className="font-display text-lg font-semibold tabular-nums text-masterlab-ink">
+          {proposal.votes}
+        </span>
+      </div>
+      <h4 className="mt-2 font-display text-sm font-semibold leading-snug text-masterlab-ink">
+        {proposal.title}
+      </h4>
+      <p className="mt-0.5 text-xs text-masterlab-ink/50">
+        por <span className="text-masterlab-ink/80">{proposal.authorName}</span> · {share}%
+      </p>
+    </div>
   );
 }
 

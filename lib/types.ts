@@ -14,5 +14,5 @@ export type ProposalWithVoteState = Proposal & {
 };
 
 export type LabState =
-  | { status: "open" }
+  | { status: "open"; deadline?: number | null }
   | { status: "closed"; winnerId: string | null; closedAt: number };
