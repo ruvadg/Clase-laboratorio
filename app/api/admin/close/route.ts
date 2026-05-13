@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { resetAll } from "@/lib/storage";
+import { closeVoting, reopenVoting } from "@/lib/storage";
 import { verifyAdminPassword } from "@/lib/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  let body: { password?: unknown };
+  let body: { password?: unknown; action?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
   if (!verifyAdminPassword(body.password)) {
     return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 401 });
   }
-  await resetAll();
-  return NextResponse.json({ ok: true });
+  if (body.action === "reopen") {
+    const state = await reopenVoting();
+    return NextResponse.json({ state, winner: null });
+  }
+  const result = await closeVoting();
+  return NextResponse.json(result);
 }

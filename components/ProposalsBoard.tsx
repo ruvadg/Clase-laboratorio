@@ -1,26 +1,38 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ProposalWithVoteState } from "@/lib/types";
+import type { LabState, ProposalWithVoteState } from "@/lib/types";
+import { WinnerBanner } from "./WinnerBanner";
 
 type ApiList = {
   proposals: ProposalWithVoteState[];
   hasProposed: boolean;
   hasVoted: boolean;
+  state: LabState;
 };
 
+const NAME_MAX = 60;
 const TITLE_MAX = 120;
 const DESC_MAX = 600;
+const NAME_STORAGE_KEY = "masterlab-author-name";
 
 export function ProposalsBoard() {
   const [state, setState] = useState<ApiList | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authorName, setAuthorName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [voting, setVoting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(NAME_STORAGE_KEY);
+      if (stored) setAuthorName(stored);
+    }
+  }, []);
 
   async function refresh() {
     try {
@@ -38,6 +50,17 @@ export function ProposalsBoard() {
     refresh();
   }, []);
 
+  const isClosed = state?.state.status === "closed";
+  const winnerId = state?.state.status === "closed" ? state.state.winnerId : null;
+  const winner = useMemo(
+    () =>
+      winnerId ? state?.proposals.find((p) => p.id === winnerId) ?? null : null,
+    [winnerId, state],
+  );
+  const totalVotes = useMemo(
+    () => (state?.proposals ?? []).reduce((acc, p) => acc + p.votes, 0),
+    [state],
+  );
   const topId = useMemo(() => state?.proposals[0]?.id, [state]);
 
   async function submitProposal(e: React.FormEvent) {
@@ -47,10 +70,18 @@ export function ProposalsBoard() {
     setSuccess(null);
     setSubmitting(true);
     try {
+      const trimmedName = authorName.trim();
+      if (typeof window !== "undefined" && trimmedName) {
+        window.localStorage.setItem(NAME_STORAGE_KEY, trimmedName);
+      }
       const res = await fetch("/api/proposals", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), description: description.trim() }),
+        body: JSON.stringify({
+          authorName: trimmedName,
+          title: title.trim(),
+          description: description.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,61 +126,87 @@ export function ProposalsBoard() {
 
   return (
     <div className="space-y-12">
-      <section className="relative overflow-hidden rounded-3xl border border-masterlab-line bg-white p-8 shadow-soft sm:p-10">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-masterlab-blue/10 blur-3xl" />
-        <p className="font-mono text-xs uppercase tracking-[0.2em] text-masterlab-blue">
-          / laboratorio
-        </p>
-        <h1 className="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight text-masterlab-ink sm:text-5xl">
-          Propón la próxima clase del{" "}
-          <span className="italic font-medium text-masterlab-blue">laboratorio</span>.
-        </h1>
-        <p className="mt-4 max-w-2xl text-base text-masterlab-ink/70 sm:text-lg">
-          Comparte qué te gustaría aprender en la próxima sesión en vivo de MasterLab IA.
-          La clase con más votos será la que construiremos juntos en el laboratorio.
-        </p>
-        <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-masterlab-ink/60">
-          <Badge>1 propuesta por persona</Badge>
-          <Badge>1 voto por persona</Badge>
-          <Badge>Resultados en vivo</Badge>
-        </div>
-      </section>
+      {isClosed && winner ? (
+        <WinnerBanner winner={winner} totalVotes={totalVotes} />
+      ) : isClosed ? (
+        <section className="animate-winner-rise rounded-3xl border border-masterlab-line bg-white p-8 text-center shadow-soft sm:p-10">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-masterlab-blue">
+            / votación cerrada
+          </p>
+          <h2 className="mt-3 font-display text-2xl font-semibold text-masterlab-ink sm:text-3xl">
+            La votación terminó sin propuestas con votos
+          </h2>
+          <p className="mt-2 text-sm text-masterlab-ink/60">
+            Pídele al administrador que reinicie la ronda para volver a empezar.
+          </p>
+        </section>
+      ) : (
+        <section className="relative overflow-hidden rounded-3xl border border-masterlab-line bg-white p-8 shadow-soft sm:p-10">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-masterlab-blue/10 blur-3xl" />
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-masterlab-blue">
+            / laboratorio
+          </p>
+          <h1 className="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight text-masterlab-ink sm:text-5xl">
+            Propón la próxima clase del{" "}
+            <span className="italic font-medium text-masterlab-blue">laboratorio</span>.
+          </h1>
+          <p className="mt-4 max-w-2xl text-base text-masterlab-ink/70 sm:text-lg">
+            Comparte qué te gustaría aprender en la próxima sesión en vivo de MasterLab IA.
+            La clase con más votos será la que construiremos juntos en el laboratorio.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-masterlab-ink/60">
+            <Badge>1 propuesta por persona</Badge>
+            <Badge>1 voto por persona</Badge>
+            <Badge>Resultados en vivo</Badge>
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-8 lg:grid-cols-5">
         <div className="lg:col-span-2">
           <h2 className="font-display text-xl font-semibold text-masterlab-ink">
-            {hasProposed ? "Ya enviaste tu propuesta" : "Enviar mi propuesta"}
+            {isClosed
+              ? "Votación cerrada"
+              : hasProposed
+                ? "Ya enviaste tu propuesta"
+                : "Enviar mi propuesta"}
           </h2>
           <p className="mt-1 text-sm text-masterlab-ink/60">
-            {hasProposed
-              ? "Solo se permite una propuesta por persona. Recuerda votar la que más te guste."
-              : "Describe el tema, el formato y por qué te interesa."}
+            {isClosed
+              ? "Esta ronda terminó. El administrador puede iniciar una nueva ronda desde el panel."
+              : hasProposed
+                ? "Solo se permite una propuesta por persona. Recuerda votar la que más te guste."
+                : "Cuéntanos quién eres y qué tema te gustaría aprender."}
           </p>
           <form
             onSubmit={submitProposal}
             className="mt-4 space-y-3 rounded-2xl border border-masterlab-line bg-white p-5 shadow-soft"
           >
-            <Field
-              label="Tema de la clase"
-              hint={`${title.length} / ${TITLE_MAX}`}
-            >
+            <Field label="Tu nombre" hint={`${authorName.length} / ${NAME_MAX}`}>
+              <input
+                type="text"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value.slice(0, NAME_MAX))}
+                disabled={isClosed || hasProposed || submitting}
+                placeholder="Ej. Ana López"
+                className="w-full rounded-lg border border-masterlab-line bg-white px-3 py-2.5 text-sm text-masterlab-ink outline-none transition placeholder:text-masterlab-ink/40 focus:border-masterlab-blue focus:shadow-ring disabled:bg-masterlab-mist/60"
+              />
+            </Field>
+            <Field label="Tema de la clase" hint={`${title.length} / ${TITLE_MAX}`}>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value.slice(0, TITLE_MAX))}
-                disabled={hasProposed || submitting}
+                disabled={isClosed || hasProposed || submitting}
                 placeholder="Ej. Construir un agente que automatice Notion"
                 className="w-full rounded-lg border border-masterlab-line bg-white px-3 py-2.5 text-sm text-masterlab-ink outline-none transition placeholder:text-masterlab-ink/40 focus:border-masterlab-blue focus:shadow-ring disabled:bg-masterlab-mist/60"
               />
             </Field>
-            <Field
-              label="Detalles (opcional)"
-              hint={`${description.length} / ${DESC_MAX}`}
-            >
+            <Field label="Detalles (opcional)" hint={`${description.length} / ${DESC_MAX}`}>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value.slice(0, DESC_MAX))}
-                disabled={hasProposed || submitting}
+                disabled={isClosed || hasProposed || submitting}
                 rows={4}
                 placeholder="¿Qué te gustaría aprender? ¿Qué problema resolverías con esa clase?"
                 className="w-full resize-none rounded-lg border border-masterlab-line bg-white px-3 py-2.5 text-sm text-masterlab-ink outline-none transition placeholder:text-masterlab-ink/40 focus:border-masterlab-blue focus:shadow-ring disabled:bg-masterlab-mist/60"
@@ -157,10 +214,22 @@ export function ProposalsBoard() {
             </Field>
             <button
               type="submit"
-              disabled={hasProposed || submitting || title.trim().length < 3}
+              disabled={
+                isClosed ||
+                hasProposed ||
+                submitting ||
+                title.trim().length < 3 ||
+                authorName.trim().length < 2
+              }
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-masterlab-blue px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-masterlab-ink/15 disabled:text-masterlab-ink/40"
             >
-              {submitting ? "Enviando..." : hasProposed ? "Ya enviaste tu propuesta" : "Enviar propuesta"}
+              {isClosed
+                ? "Votación cerrada"
+                : submitting
+                  ? "Enviando..."
+                  : hasProposed
+                    ? "Ya enviaste tu propuesta"
+                    : "Enviar propuesta"}
             </button>
             {error && <Alert kind="error">{error}</Alert>}
             {success && <Alert kind="success">{success}</Alert>}
@@ -174,7 +243,9 @@ export function ProposalsBoard() {
                 Propuestas
               </h2>
               <p className="mt-1 text-sm text-masterlab-ink/60">
-                Vota una. La más votada será la próxima clase del laboratorio.
+                {isClosed
+                  ? "Estos fueron los resultados finales de esta ronda."
+                  : "Vota una. La más votada será la próxima clase del laboratorio."}
               </p>
             </div>
             <span className="rounded-full border border-masterlab-line bg-white px-3 py-1 text-xs text-masterlab-ink/60">
@@ -195,8 +266,10 @@ export function ProposalsBoard() {
                   key={p.id}
                   proposal={p}
                   rank={idx + 1}
-                  isTop={p.id === topId && p.votes > 0}
-                  disabled={hasVoted || voting === p.id}
+                  isTop={p.id === topId && p.votes > 0 && !isClosed}
+                  isWinner={isClosed && p.id === winnerId}
+                  isClosed={isClosed}
+                  disabled={isClosed || hasVoted || voting === p.id}
                   loading={voting === p.id}
                   hasVoted={hasVoted}
                   onVote={() => castVote(p.id)}
@@ -273,6 +346,8 @@ function ProposalCard({
   proposal,
   rank,
   isTop,
+  isWinner,
+  isClosed,
   disabled,
   loading,
   hasVoted,
@@ -281,18 +356,22 @@ function ProposalCard({
   proposal: ProposalWithVoteState;
   rank: number;
   isTop: boolean;
+  isWinner: boolean;
+  isClosed: boolean;
   disabled: boolean;
   loading: boolean;
   hasVoted: boolean;
   onVote: () => void;
 }) {
+  const borderClass = isWinner
+    ? "border-masterlab-blue/40 ring-2 ring-masterlab-blue/30"
+    : isTop
+      ? "border-masterlab-blue/40 ring-1 ring-masterlab-blue/20"
+      : "border-masterlab-line";
+
   return (
     <article
-      className={`group relative flex animate-pop-in items-stretch gap-4 rounded-2xl border bg-white p-4 shadow-soft transition ${
-        isTop
-          ? "border-masterlab-blue/40 ring-1 ring-masterlab-blue/20"
-          : "border-masterlab-line"
-      }`}
+      className={`group relative flex animate-pop-in items-stretch gap-4 rounded-2xl border bg-white p-4 shadow-soft transition ${borderClass}`}
     >
       <div className="flex flex-col items-center justify-center rounded-xl bg-masterlab-mist px-3 py-2 text-center">
         <span className="font-display text-2xl font-semibold tabular-nums text-masterlab-ink">
@@ -308,7 +387,12 @@ function ProposalCard({
           <span className="font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/40">
             #{rank}
           </span>
-          {isTop && (
+          {isWinner && (
+            <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
+              Ganadora
+            </span>
+          )}
+          {!isWinner && isTop && (
             <span className="rounded-full bg-masterlab-blue px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white">
               En cabeza
             </span>
@@ -327,6 +411,11 @@ function ProposalCard({
         <h3 className="mt-1 font-display text-base font-semibold leading-snug text-masterlab-ink">
           {proposal.title}
         </h3>
+        {proposal.authorName && (
+          <p className="mt-0.5 text-xs text-masterlab-ink/50">
+            por <span className="text-masterlab-ink/80">{proposal.authorName}</span>
+          </p>
+        )}
         {proposal.description && (
           <p className="mt-1 whitespace-pre-wrap text-sm text-masterlab-ink/70">
             {proposal.description}
@@ -341,9 +430,11 @@ function ProposalCard({
           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
             proposal.votedByMe
               ? "bg-emerald-50 text-emerald-700"
-              : hasVoted
+              : isClosed
                 ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
-                : "bg-masterlab-ink text-white hover:bg-masterlab-blue"
+                : hasVoted
+                  ? "bg-masterlab-mist text-masterlab-ink/40 cursor-not-allowed"
+                  : "bg-masterlab-ink text-white hover:bg-masterlab-blue"
           }`}
           aria-label={`Votar por ${proposal.title}`}
         >
@@ -351,6 +442,8 @@ function ProposalCard({
             <>
               <Check /> Votado
             </>
+          ) : isClosed ? (
+            "Cerrada"
           ) : loading ? (
             "..."
           ) : (
@@ -367,10 +460,7 @@ function ProposalCard({
 function Up() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 5l7 8h-4v6h-6v-6H5l7-8z"
-        fill="currentColor"
-      />
+      <path d="M12 5l7 8h-4v6h-6v-6H5l7-8z" fill="currentColor" />
     </svg>
   );
 }

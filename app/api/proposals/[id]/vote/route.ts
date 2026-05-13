@@ -15,6 +15,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         { status: 409 },
       );
     }
+    if (result.reason === "closed") {
+      return NextResponse.json(
+        { error: "La votación está cerrada." },
+        { status: 423 },
+      );
+    }
     return NextResponse.json({ error: "Propuesta no encontrada." }, { status: 404 });
   }
   return NextResponse.json({ proposal: result.proposal });

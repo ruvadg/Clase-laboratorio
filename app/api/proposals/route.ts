@@ -1,20 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createProposal, getMyProposalId, getMyVotedId, listProposals } from "@/lib/storage";
+import {
+  createProposal,
+  getLabState,
+  getMyProposalId,
+  getMyVotedId,
+  listProposals,
+} from "@/lib/storage";
 import { getIdentityHash } from "@/lib/ip";
 import type { ProposalWithVoteState } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_NAME = 60;
 const MAX_TITLE = 120;
 const MAX_DESCRIPTION = 600;
 
 export async function GET(req: NextRequest) {
   const identity = getIdentityHash(req);
-  const [proposals, myProposalId, myVoteId] = await Promise.all([
+  const [proposals, myProposalId, myVoteId, state] = await Promise.all([
     listProposals(),
     getMyProposalId(identity),
     getMyVotedId(identity),
+    getLabState(),
   ]);
   const enriched: ProposalWithVoteState[] = proposals.map((p) => ({
     ...p,
@@ -25,11 +33,12 @@ export async function GET(req: NextRequest) {
     proposals: enriched,
     hasProposed: Boolean(myProposalId),
     hasVoted: Boolean(myVoteId),
+    state,
   });
 }
 
 export async function POST(req: NextRequest) {
-  let body: { title?: unknown; description?: unknown };
+  let body: { title?: unknown; description?: unknown; authorName?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -37,7 +46,20 @@ export async function POST(req: NextRequest) {
   }
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const description = typeof body.description === "string" ? body.description.trim() : "";
+  const authorName = typeof body.authorName === "string" ? body.authorName.trim() : "";
 
+  if (authorName.length < 2) {
+    return NextResponse.json(
+      { error: "Pon tu nombre (mínimo 2 caracteres)." },
+      { status: 400 },
+    );
+  }
+  if (authorName.length > MAX_NAME) {
+    return NextResponse.json(
+      { error: `El nombre no puede superar ${MAX_NAME} caracteres.` },
+      { status: 400 },
+    );
+  }
   if (title.length < 3) {
     return NextResponse.json(
       { error: "El título debe tener al menos 3 caracteres." },
@@ -58,8 +80,19 @@ export async function POST(req: NextRequest) {
   }
 
   const identity = getIdentityHash(req);
-  const result = await createProposal({ title, description, authorHash: identity });
+  const result = await createProposal({
+    title,
+    description,
+    authorName,
+    authorHash: identity,
+  });
   if (!result.ok) {
+    if (result.reason === "closed") {
+      return NextResponse.json(
+        { error: "La votación está cerrada." },
+        { status: 423 },
+      );
+    }
     return NextResponse.json(
       { error: "Ya enviaste una propuesta desde este dispositivo." },
       { status: 409 },

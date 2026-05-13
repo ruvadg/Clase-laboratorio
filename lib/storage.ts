@@ -1,10 +1,11 @@
 import { Redis } from "@upstash/redis";
-import type { Proposal } from "./types";
+import type { LabState, Proposal } from "./types";
 
 const KEY_INDEX = "proposals:ids";
 const KEY_PROPOSAL = (id: string) => `proposal:${id}`;
 const KEY_VOTE = (hash: string) => `vote:${hash}`;
 const KEY_AUTHOR = (hash: string) => `author:${hash}`;
+const KEY_STATE = "lab:state";
 
 function resolveRedis(): Redis | null {
   const url =
@@ -33,6 +34,8 @@ type Store = {
   getAuthor(hash: string): Promise<string | null>;
   setVote(hash: string, id: string): Promise<void>;
   getVote(hash: string): Promise<string | null>;
+  getState(): Promise<LabState | null>;
+  setState(state: LabState): Promise<void>;
   reset(): Promise<void>;
 };
 
@@ -40,6 +43,7 @@ const memory = (() => {
   const proposals = new Map<string, Proposal>();
   const authors = new Map<string, string>();
   const votes = new Map<string, string>();
+  let state: LabState | null = null;
   const store: Store = {
     async listProposals() {
       return Array.from(proposals.values());
@@ -62,10 +66,17 @@ const memory = (() => {
     async getVote(hash) {
       return votes.get(hash) ?? null;
     },
+    async getState() {
+      return state;
+    },
+    async setState(next) {
+      state = next;
+    },
     async reset() {
       proposals.clear();
       authors.clear();
       votes.clear();
+      state = null;
     },
   };
   return store;
@@ -100,12 +111,19 @@ function buildRemote(client: Redis): Store {
     async getVote(hash) {
       return (await client.get<string>(KEY_VOTE(hash))) ?? null;
     },
+    async getState() {
+      return (await client.get<LabState>(KEY_STATE)) ?? null;
+    },
+    async setState(next) {
+      await client.set(KEY_STATE, next);
+    },
     async reset() {
       const ids = (await client.smembers(KEY_INDEX)) as string[];
       if (ids.length) {
         await Promise.all(ids.map((id) => client.del(KEY_PROPOSAL(id))));
       }
       await client.del(KEY_INDEX);
+      await client.del(KEY_STATE);
       for (const pattern of ["vote:*", "author:*"]) {
         let cursor: string | number = 0;
         do {
@@ -140,11 +158,21 @@ export async function getMyVotedId(voterHash: string): Promise<string | null> {
   return store.getVote(voterHash);
 }
 
+export async function getLabState(): Promise<LabState> {
+  return (await store.getState()) ?? { status: "open" };
+}
+
 export async function createProposal(input: {
   title: string;
   description: string;
+  authorName: string;
   authorHash: string;
-}): Promise<{ ok: true; proposal: Proposal } | { ok: false; reason: "already-proposed" }> {
+}): Promise<
+  | { ok: true; proposal: Proposal }
+  | { ok: false; reason: "already-proposed" | "closed" }
+> {
+  const state = await getLabState();
+  if (state.status === "closed") return { ok: false, reason: "closed" };
   const existing = await store.getAuthor(input.authorHash);
   if (existing) {
     const cur = await store.getProposal(existing);
@@ -154,6 +182,7 @@ export async function createProposal(input: {
     id: generateProposalId(),
     title: input.title,
     description: input.description,
+    authorName: input.authorName,
     votes: 0,
     createdAt: Date.now(),
     authorHash: input.authorHash,
@@ -168,8 +197,10 @@ export async function voteFor(
   voterHash: string,
 ): Promise<
   | { ok: true; proposal: Proposal }
-  | { ok: false; reason: "already-voted" | "not-found" }
+  | { ok: false; reason: "already-voted" | "not-found" | "closed" }
 > {
+  const state = await getLabState();
+  if (state.status === "closed") return { ok: false, reason: "closed" };
   const prevVote = await store.getVote(voterHash);
   if (prevVote) return { ok: false, reason: "already-voted" };
   const proposal = await store.getProposal(proposalId);
@@ -178,6 +209,27 @@ export async function voteFor(
   await store.saveProposal(updated);
   await store.setVote(voterHash, proposalId);
   return { ok: true, proposal: updated };
+}
+
+export async function closeVoting(): Promise<{
+  state: LabState;
+  winner: Proposal | null;
+}> {
+  const proposals = await listProposals();
+  const winner = proposals[0] && proposals[0].votes > 0 ? proposals[0] : null;
+  const state: LabState = {
+    status: "closed",
+    winnerId: winner?.id ?? null,
+    closedAt: Date.now(),
+  };
+  await store.setState(state);
+  return { state, winner };
+}
+
+export async function reopenVoting(): Promise<LabState> {
+  const state: LabState = { status: "open" };
+  await store.setState(state);
+  return state;
 }
 
 export async function resetAll(): Promise<void> {
