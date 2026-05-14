@@ -22,9 +22,196 @@ const PRESETS: { label: string; ms: number }[] = [
 ];
 
 const POLL_INTERVAL_MS = 6000;
+const SESSION_KEY = "masterlab-admin-session";
 
 export function AdminPanel() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [verifiedPassword, setVerifiedPassword] = useState("");
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem(SESSION_KEY);
+    if (!stored) {
+      setCheckingSession(false);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/admin/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: stored }),
+    })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setVerifiedPassword(stored);
+          setUnlocked(true);
+        } else {
+          window.sessionStorage.removeItem(SESSION_KEY);
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingSession(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function lock() {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(SESSION_KEY);
+    }
+    setUnlocked(false);
+    setVerifiedPassword("");
+  }
+
+  function unlock(password: string) {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(SESSION_KEY, password);
+    }
+    setVerifiedPassword(password);
+    setUnlocked(true);
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-masterlab-line bg-white p-6 shadow-soft">
+        <div className="h-32 animate-pulse rounded-xl bg-masterlab-mist/60" />
+      </div>
+    );
+  }
+
+  if (!unlocked) {
+    return <LockScreen onUnlock={unlock} />;
+  }
+
+  return <AdminPanelUnlocked password={verifiedPassword} onLock={lock} />;
+}
+
+function LockScreen({ onUnlock }: { onUnlock: (password: string) => void }) {
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setError(null);
+    if (!password) {
+      setError("Introduce la contraseña.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data?.error ?? "Contraseña incorrecta.");
+        return;
+      }
+      onUnlock(password);
+    } catch {
+      setError("Error de red. Intenta de nuevo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-md">
+      <div className="rounded-2xl border border-masterlab-line bg-white p-7 shadow-soft sm:p-8">
+        <div className="flex items-center gap-3">
+          <LockIcon />
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-masterlab-blue">
+            / panel restringido
+          </p>
+        </div>
+        <h1 className="mt-3 font-display text-2xl font-semibold text-masterlab-ink">
+          Acceso solo para administradores
+        </h1>
+        <p className="mt-2 text-sm text-masterlab-ink/60">
+          Introduce la contraseña para entrar al control del laboratorio.
+        </p>
+
+        <form onSubmit={submit} className="mt-5 space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-masterlab-ink/60">
+              Contraseña
+            </span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+              autoFocus
+              placeholder="••••••••••"
+              className="w-full rounded-lg border border-masterlab-line bg-white px-3 py-2.5 text-sm text-masterlab-ink outline-none transition placeholder:text-masterlab-ink/40 focus:border-masterlab-blue focus:shadow-ring"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={busy || !password}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-masterlab-blue px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-masterlab-ink/15 disabled:text-masterlab-ink/40"
+          >
+            {busy ? "Verificando..." : "Entrar"}
+          </button>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+        </form>
+
+        <p className="mt-5 text-[11px] text-masterlab-ink/40">
+          Esta página es privada. Los alumnos no necesitan entrar aquí.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LockIcon() {
+  return (
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-masterlab-blue/10 text-masterlab-blue">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <rect
+          x="4"
+          y="11"
+          width="16"
+          height="10"
+          rx="2"
+          stroke="currentColor"
+          strokeWidth="2"
+        />
+        <path
+          d="M8 11V8a4 4 0 018 0v3"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+function AdminPanelUnlocked({
+  password,
+  onLock,
+}: {
+  password: string;
+  onLock: () => void;
+}) {
   const [data, setData] = useState<ApiList | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<null | Action>(null);
@@ -159,16 +346,27 @@ export function AdminPanel() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="rounded-2xl border border-masterlab-line bg-white p-6 shadow-soft">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-masterlab-blue">
-          / panel admin
-        </p>
-        <h1 className="mt-2 font-display text-2xl font-semibold text-masterlab-ink">
-          Control del laboratorio
-        </h1>
-        <p className="mt-2 text-sm text-masterlab-ink/60">
-          Programa el cierre, declara manualmente al ganador o reinicia la ronda.
-          También puedes exportar los resultados a CSV.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-masterlab-blue">
+              / panel admin
+            </p>
+            <h1 className="mt-2 font-display text-2xl font-semibold text-masterlab-ink">
+              Control del laboratorio
+            </h1>
+            <p className="mt-2 text-sm text-masterlab-ink/60">
+              Programa el cierre, declara manualmente al ganador o reinicia la
+              ronda. También puedes exportar los resultados a CSV.
+            </p>
+          </div>
+          <button
+            onClick={onLock}
+            className="shrink-0 rounded-full border border-masterlab-line bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-masterlab-ink/60 transition hover:border-masterlab-blue hover:text-masterlab-blue"
+            aria-label="Cerrar sesión de admin"
+          >
+            Salir
+          </button>
+        </div>
 
         <div className="mt-5 grid grid-cols-3 gap-3 text-center">
           <Metric
@@ -218,25 +416,8 @@ export function AdminPanel() {
       </div>
 
       <div className="rounded-2xl border border-masterlab-line bg-white p-6 shadow-soft">
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-masterlab-ink/60">
-            Contraseña del admin
-          </span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setPendingAction(null);
-            }}
-            disabled={busy !== null}
-            placeholder="••••••••••"
-            className="w-full rounded-lg border border-masterlab-line bg-white px-3 py-2.5 text-sm text-masterlab-ink outline-none transition placeholder:text-masterlab-ink/40 focus:border-masterlab-blue focus:shadow-ring"
-          />
-        </label>
-
         {!isClosed && (
-          <div className="mt-5">
+          <div>
             <h3 className="font-display text-sm font-semibold text-masterlab-ink">
               Programar cierre
             </h3>
