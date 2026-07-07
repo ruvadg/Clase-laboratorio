@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Campus Master Lab IA — Prototipo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231E1EFF' d='M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --ml-blue: #1E1EFF;
+    --ml-ink: #0A0A23;
+    --ml-mist: #F4F4FF;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--ml-ink);
+    overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    touch-action: none;
+  }
+  #game-container { width: 100%; height: 100%; }
+
+  /* ---------- Overlay de bienvenida ---------- */
+  #welcome {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 35%, rgba(30,30,255,.25), transparent 60%), var(--ml-ink);
+  }
+  .card {
+    width: min(440px, calc(100vw - 40px));
+    background: rgba(244,244,255,.04);
+    border: 1px solid rgba(244,244,255,.15);
+    border-radius: 16px;
+    padding: 36px 32px;
+    text-align: center;
+    color: var(--ml-mist);
+    backdrop-filter: blur(6px);
+  }
+  .spark {
+    width: 54px; height: 54px; margin: 0 auto 18px;
+    color: var(--ml-blue);
+    filter: drop-shadow(0 0 14px rgba(30,30,255,.8));
+  }
+  .card h1 {
+    font-size: 22px; letter-spacing: .12em; font-weight: 800;
+  }
+  .card h1 .lab { color: var(--ml-blue); font-style: italic; }
+  .card p.sub { margin: 6px 0 22px; font-size: 13px; opacity: .65; }
+  .card input {
+    width: 100%; padding: 12px 16px;
+    border-radius: 10px; border: 1px solid rgba(244,244,255,.25);
+    background: rgba(10,10,35,.6); color: var(--ml-mist);
+    font-size: 15px; text-align: center; outline: none;
+  }
+  .card input:focus { border-color: var(--ml-blue); box-shadow: 0 0 0 4px rgba(30,30,255,.18); }
+  .card button {
+    margin-top: 14px; width: 100%; padding: 13px;
+    border: none; border-radius: 10px; cursor: pointer;
+    background: var(--ml-blue); color: white;
+    font-size: 15px; font-weight: 700; letter-spacing: .04em;
+    transition: transform .12s ease, box-shadow .12s ease;
+    box-shadow: 0 6px 24px rgba(30,30,255,.4);
+  }
+  .card button:hover { transform: translateY(-1px); box-shadow: 0 10px 32px rgba(30,30,255,.55); }
+  .hints { margin-top: 20px; font-size: 12px; opacity: .55; line-height: 1.7; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 5;
+    display: none; align-items: center; gap: 10px;
+    background: rgba(10,10,35,.72);
+    border: 1px solid rgba(244,244,255,.18);
+    border-radius: 999px;
+    padding: 8px 18px 8px 10px;
+    color: var(--ml-mist); font-weight: 800; font-size: 18px;
+    backdrop-filter: blur(4px);
+  }
+  #hud img { width: 30px; height: 30px; }
+  #brand {
+    position: fixed; top: 16px; right: 16px; z-index: 5;
+    display: none; color: var(--ml-mist);
+    font-size: 11px; letter-spacing: .18em; font-weight: 700; opacity: .55;
+  }
+  #brand .lab { color: var(--ml-blue); font-style: italic; }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+
+<div id="hud"><img src="assets/coin.png" alt="moneda"><span id="coin-count">0</span></div>
+<div id="brand">MASTER<span class="lab">LAB</span> IA</div>
+
+<div id="welcome">
+  <div class="card">
+    <svg class="spark" viewBox="0 0 64 64" fill="currentColor">
+      <path d="M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z"/>
+      <circle cx="52" cy="14" r="3.2"/>
+    </svg>
+    <h1>CAMPUS MASTER<span class="lab">LAB</span> IA</h1>
+    <p class="sub">Prototipo · Fase 1 — la Plaza Central</p>
+    <input id="player-name" type="text" maxlength="14" placeholder="Tu nombre de científic@" autocomplete="off">
+    <button id="enter-btn">Entrar al laboratorio ⚡</button>
+    <div class="hints">
+      🖱️ / 👆 Toca el piso para caminar &nbsp;·&nbsp; ⌨️ WASD o flechas<br>
+      🪙 Recoge las monedas Spark que aparecen en la plaza
+    </div>
+  </div>
+</div>
+
+<script src="phaser.min.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   Campus Master Lab IA — Prototipo Fase 1
+   Una sala (Plaza Central), un jugador, monedas coleccionables.
+   Fase 2 añadirá multijugador (Colyseus) sobre esta misma base.
+   ============================================================ */
+
+const WORLD_W = 1920;
+const WORLD_H = 1085;
+
+// Polígono del área caminable (el piso claro de la plaza).
+// Coordenadas sobre la imagen plaza.jpg (1920x1085).
+const FLOOR = [
+  [960, 300], [1250, 360], [1520, 480], [1660, 620],
+  [1560, 800], [1290, 950], [960, 1010], [630, 950],
+  [360, 800], [260, 620], [400, 480], [670, 360],
+];
+
+function pointInPolygon(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function randomFloorPoint() {
+  for (let i = 0; i < 200; i++) {
+    const x = 260 + Math.random() * (1660 - 260);
+    const y = 300 + Math.random() * (1010 - 300);
+    if (pointInPolygon(x, y, FLOOR)) return { x, y };
+  }
+  return { x: 960, y: 700 };
+}
+
+const COIN_COUNT = 6;
+const SPEED = 340;            // px/s
+const PICKUP_DIST = 55;
+
+let playerName = "Científic@";
+
+class PlazaScene extends Phaser.Scene {
+  constructor() { super("plaza"); }
+
+  preload() {
+    this.load.image("plaza", "assets/plaza.jpg");
+    this.load.image("player", "assets/player.png");
+    this.load.image("coin", "assets/coin.png");
+  }
+
+  create() {
+    this.add.image(0, 0, "plaza").setOrigin(0);
+
+    // --- Jugador ---
+    this.player = this.add.image(960, 760, "player").setOrigin(0.5, 0.92);
+    this.baseY = 760;
+    this.target = null;
+    this.moving = false;
+    this.bobT = 0;
+
+    this.nameTag = this.add.text(960, 760, playerName, {
+      fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      fontSize: "22px", fontStyle: "bold",
+      color: "#F4F4FF",
+      stroke: "#0A0A23", strokeThickness: 5,
+    }).setOrigin(0.5, 1);
+
+    // --- Monedas ---
+    this.coins = [];
+    for (let i = 0; i < COIN_COUNT; i++) this.spawnCoin();
+    this.score = 0;
+
+    // --- Input ---
+    this.input.on("pointerdown", (p) => {
+      const wp = this.cameras.main.getWorldPoint(p.x, p.y);
+      if (pointInPolygon(wp.x, wp.y, FLOOR)) {
+        this.target = { x: wp.x, y: wp.y };
+        this.marker(wp.x, wp.y);
+      }
+    });
+    this.keys = this.input.keyboard.addKeys("W,A,S,D,UP,LEFT,DOWN,RIGHT");
+
+    window.__plaza = this; // hook para pruebas automatizadas
+
+    // --- Cámara ---
+    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.fitCamera();
+    this.scale.on("resize", () => this.fitCamera());
+  }
+
+  fitCamera() {
+    // Zoom para que el mundo llene la pantalla sin deformarse.
+    const cam = this.cameras.main;
+    const zx = this.scale.width / WORLD_W;
+    const zy = this.scale.height / WORLD_H;
+    cam.setZoom(Math.max(zx, zy));
+    cam.centerOn(WORLD_W / 2, WORLD_H / 2);
+  }
+
+  marker(x, y) {
+    const c = this.add.circle(x, y, 14).setStrokeStyle(3, 0x1E1EFF, 1);
+    this.tweens.add({
+      targets: c, scale: 0.2, alpha: 0, duration: 420,
+      onComplete: () => c.destroy(),
+    });
+  }
+
+  spawnCoin() {
+    const { x, y } = randomFloorPoint();
+    const coin = this.add.image(x, y, "coin").setScale(0.85);
+    coin.baseY = y;
+    coin.phase = Math.random() * Math.PI * 2;
+    this.coins.push(coin);
+  }
+
+  collect(coin) {
+    this.score++;
+    document.getElementById("coin-count").textContent = this.score;
+
+    const plus = this.add.text(coin.x, coin.y - 30, "+1", {
+      fontSize: "30px", fontStyle: "bold", color: "#FFD84D",
+      stroke: "#0A0A23", strokeThickness: 6,
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: plus, y: coin.y - 90, alpha: 0, duration: 650,
+      onComplete: () => plus.destroy(),
+    });
+    this.tweens.add({
+      targets: coin, y: coin.y - 40, alpha: 0, scale: 1.15, duration: 260,
+      onComplete: () => coin.destroy(),
+    });
+    this.coins = this.coins.filter((c) => c !== coin);
+    this.time.delayedCall(1200, () => this.spawnCoin());
+  }
+
+  update(time, dt) {
+    const d = dt / 1000;
+    let vx = 0, vy = 0;
+
+    // Teclado
+    const k = this.keys;
+    if (k.A.isDown || k.LEFT.isDown) vx -= 1;
+    if (k.D.isDown || k.RIGHT.isDown) vx += 1;
+    if (k.W.isDown || k.UP.isDown) vy -= 1;
+    if (k.S.isDown || k.DOWN.isDown) vy += 1;
+
+    if (vx || vy) {
+      this.target = null; // el teclado manda
+      const len = Math.hypot(vx, vy);
+      vx = (vx / len) * SPEED * d;
+      vy = (vy / len) * SPEED * d;
+      this.tryMove(vx, vy);
+    } else if (this.target) {
+      const dx = this.target.x - this.player.x;
+      const dy = this.target.y - this.baseY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 6) {
+        this.target = null;
+        this.moving = false;
+      } else {
+        const step = Math.min(SPEED * d, dist);
+        this.tryMove((dx / dist) * step, (dy / dist) * step);
+      }
+    } else {
+      this.moving = false;
+    }
+
+    // Bob al caminar + flip por dirección
+    if (this.moving) {
+      this.bobT += dt * 0.02;
+      this.player.y = this.baseY + Math.sin(this.bobT) * 5;
+      this.player.angle = Math.sin(this.bobT) * 2.2;
+    } else {
+      this.player.y = this.baseY;
+      this.player.angle = 0;
+      this.bobT = 0;
+    }
+
+    // Pseudo-profundidad: más pequeño al fondo
+    const t = (this.baseY - 300) / (1010 - 300);
+    this.player.setScale(0.72 + t * 0.38);
+    this.nameTag.setPosition(this.player.x, this.player.y - this.player.displayHeight - 6);
+
+    // Monedas flotando + recolección
+    for (const coin of [...this.coins]) {
+      coin.y = coin.baseY + Math.sin(time * 0.004 + coin.phase) * 6;
+      if (Math.hypot(coin.x - this.player.x, coin.baseY - this.baseY) < PICKUP_DIST) {
+        this.collect(coin);
+      }
+    }
+  }
+
+  tryMove(dx, dy) {
+    const nx = this.player.x + dx;
+    const ny = this.baseY + dy;
+    let movedAny = false;
+    if (pointInPolygon(nx, this.baseY, FLOOR)) { this.player.x = nx; movedAny = true; }
+    if (pointInPolygon(this.player.x, ny, FLOOR)) { this.baseY = ny; movedAny = true; }
+    if (dx !== 0) this.player.setFlipX(dx < 0);
+    this.moving = movedAny;
+    if (!movedAny) this.target = null;
+  }
+}
+
+// ---------- Arranque ----------
+document.getElementById("enter-btn").addEventListener("click", start);
+document.getElementById("player-name").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") start();
+});
+
+function start() {
+  const v = document.getElementById("player-name").value.trim();
+  if (v) playerName = v;
+  document.getElementById("welcome").style.display = "none";
+  document.getElementById("hud").style.display = "flex";
+  document.getElementById("brand").style.display = "block";
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: "game-container",
+    backgroundColor: "#0A0A23",
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    scene: PlazaScene,
+  });
+}
+</script>
+</body>
+</html>
