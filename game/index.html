@@ -195,7 +195,9 @@ class PlazaScene extends Phaser.Scene {
 
   preload() {
     this.load.image("plaza", "assets/plaza.jpg");
-    this.load.image("player", "assets/player.png");
+    this.load.image("player-down", "assets/player-down.png");
+    this.load.image("player-up", "assets/player-up.png");
+    this.load.image("player-side", "assets/player-side.png");
     this.load.image("coin", "assets/coin.png");
   }
 
@@ -282,7 +284,7 @@ class PlazaScene extends Phaser.Scene {
   // ---------- Avatares ----------
   makeAvatar(x, y, name, isMe) {
     const shadow = this.add.ellipse(x, y - 4, 92, 30, 0x0A0A23, 0.32);
-    const sprite = this.add.image(x, y, "player").setOrigin(0.5, 0.94);
+    const sprite = this.add.image(x, y, "player-down").setOrigin(0.5, 0.94);
     const tag = this.add.text(x, y, name, {
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
       fontSize: "22px", fontStyle: "bold",
@@ -293,7 +295,7 @@ class PlazaScene extends Phaser.Scene {
       sprite, shadow, tag,
       x, y,            // posición lógica (pies)
       tx: x, ty: y,    // objetivo de interpolación (remotos)
-      flip: false, moving: false,
+      flip: false, moving: false, dir: "down",
       bobT: 0, idleT: Math.random() * 10,
       bubble: null, bubbleTimer: null,
     };
@@ -308,20 +310,24 @@ class PlazaScene extends Phaser.Scene {
 
   renderAvatar(a, dt) {
     const ds = depthScaleFor(a.y);
+    // Vista según dirección: frente / espalda / perfil (flip para izquierda)
+    const tex = a.dir === "up" ? "player-up" : a.dir === "side" ? "player-side" : "player-down";
+    if (a.sprite.texture.key !== tex) a.sprite.setTexture(tex);
+    const flip = a.dir === "side" ? a.flip : false;
     if (a.moving) {
       a.bobT += dt * 0.022;
       const bob = Math.abs(Math.sin(a.bobT));
       a.sprite.y = a.y - bob * 7;
-      a.sprite.angle = Math.sin(a.bobT) * 3 + (a.flip ? -2.5 : 2.5);
+      a.sprite.angle = Math.sin(a.bobT) * 3 + (a.dir === "side" ? (flip ? -2.5 : 2.5) : 0);
       a.sprite.scaleY = ds * (1 + bob * 0.045);
-      a.sprite.scaleX = (a.flip ? -1 : 1) * ds * (1 - bob * 0.03);
+      a.sprite.scaleX = (flip ? -1 : 1) * ds * (1 - bob * 0.03);
       a.shadow.setScale(1 - bob * 0.12);
     } else {
       a.idleT += dt * 0.004;
       a.sprite.y = a.y;
       a.sprite.angle = 0;
       a.sprite.scaleY = ds * (1 + Math.sin(a.idleT) * 0.012);
-      a.sprite.scaleX = (a.flip ? -1 : 1) * ds;
+      a.sprite.scaleX = (flip ? -1 : 1) * ds;
       a.shadow.setScale(1);
       a.bobT = 0;
     }
@@ -417,11 +423,24 @@ class PlazaScene extends Phaser.Scene {
   }
 
   marker(x, y) {
-    const c = this.add.circle(x, y, 14).setStrokeStyle(3, 0x1E1EFF, 1).setDepth(99998);
+    // Pulso inicial
+    const c = this.add.circle(x, y, 16).setStrokeStyle(3, 0x1E1EFF, 1).setDepth(99998);
     this.tweens.add({
       targets: c, scale: 0.2, alpha: 0, duration: 420,
       onComplete: () => c.destroy(),
     });
+    // Anillo persistente que respira hasta llegar al destino
+    if (this.destMarker) { this.destMarker.destroy(); this.destMarker = null; }
+    const ring = this.add.ellipse(x, y, 34, 16).setStrokeStyle(2.5, 0x1E1EFF, 0.9).setDepth(2);
+    this.destMarker = ring;
+    this.tweens.add({
+      targets: ring, scaleX: 1.25, scaleY: 1.25, alpha: 0.45,
+      duration: 520, yoyo: true, repeat: -1, ease: "sine.inOut",
+    });
+  }
+
+  clearDestMarker() {
+    if (this.destMarker) { this.destMarker.destroy(); this.destMarker = null; }
   }
 
   fitCamera() {
@@ -448,7 +467,7 @@ class PlazaScene extends Phaser.Scene {
     }
 
     if (vx || vy) {
-      this.target = null;
+      if (this.target) { this.target = null; this.clearDestMarker(); }
       const len = Math.hypot(vx, vy);
       this.tryMove((vx / len) * SPEED * dt, (vy / len) * SPEED * dt);
     } else if (this.target) {
@@ -458,6 +477,7 @@ class PlazaScene extends Phaser.Scene {
       if (dist < 6) {
         this.target = null;
         this.moving = false;
+        this.clearDestMarker();
       } else {
         const step = Math.min(SPEED * dt, dist);
         this.tryMove((dx / dist) * step, (dy / dist) * step);
@@ -471,11 +491,11 @@ class PlazaScene extends Phaser.Scene {
 
     // 2) Enviar posición al servidor (throttle + solo si cambió)
     if (this.online && this.room && time - this.lastSent > MOVE_SEND_MS) {
-      const stateStr = `${this.me.x | 0},${this.me.y | 0},${this.me.flip},${this.moving}`;
+      const stateStr = `${this.me.x | 0},${this.me.y | 0},${this.me.flip},${this.moving},${this.me.dir}`;
       if (stateStr !== this.lastSentState) {
         this.room.send("move", {
           x: this.me.x, y: this.me.y,
-          flip: this.me.flip, moving: this.moving,
+          flip: this.me.flip, moving: this.moving, dir: this.me.dir,
         });
         this.lastSentState = stateStr;
         this.lastSent = time;
@@ -503,6 +523,7 @@ class PlazaScene extends Phaser.Scene {
         a.tx = p.x; a.ty = p.y;
         a.flip = !!p.flip;
         a.moving = !!p.moving;
+        a.dir = p.dir || "down";
       });
       for (const [id, a] of this.remotes) {
         if (!seen.has(id)) { this.destroyAvatar(a); this.remotes.delete(id); }
@@ -561,9 +582,36 @@ class PlazaScene extends Phaser.Scene {
     let movedAny = false;
     if (isWalkable(nx, this.me.y)) { this.me.x = nx; movedAny = true; }
     if (isWalkable(this.me.x, ny)) { this.me.y = ny; movedAny = true; }
-    if (dx !== 0) { this.me.flip = dx < 0; this.leanDir = dx < 0 ? -1 : 1; }
+
+    // Si la fuente bloquea el camino, deslizarse tangencialmente a su alrededor
+    if (!movedAny && this.target) {
+      const fx = this.me.x - FOUNTAIN.x, fy = this.me.y - FOUNTAIN.y;
+      const flen = Math.hypot(fx, fy) || 1;
+      // dos tangentes posibles; elegir la que acerque al objetivo
+      const step = Math.hypot(dx, dy);
+      const t1 = { x: -fy / flen * step, y: fx / flen * step };
+      const t2 = { x: fy / flen * step, y: -fx / flen * step };
+      const d1 = Math.hypot(this.me.x + t1.x - this.target.x, this.me.y + t1.y - this.target.y);
+      const d2 = Math.hypot(this.me.x + t2.x - this.target.x, this.me.y + t2.y - this.target.y);
+      const t = d1 < d2 ? t1 : t2;
+      if (isWalkable(this.me.x + t.x, this.me.y + t.y)) {
+        this.me.x += t.x; this.me.y += t.y;
+        dx = t.x; dy = t.y;
+        movedAny = true;
+      }
+    }
+
+    // Dirección de la vista según el vector dominante
+    if (movedAny && (dx || dy)) {
+      if (Math.abs(dx) > Math.abs(dy) * 0.9) {
+        this.me.dir = "side";
+        this.me.flip = dx < 0;
+      } else {
+        this.me.dir = dy < 0 ? "up" : "down";
+      }
+    }
     this.moving = movedAny;
-    if (!movedAny) this.target = null;
+    if (!movedAny) { this.target = null; this.clearDestMarker(); }
   }
 }
 

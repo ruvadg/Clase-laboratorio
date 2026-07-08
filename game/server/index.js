@@ -36,6 +36,7 @@ defineTypes(Player, {
   y: "number",
   flip: "boolean",
   moving: "boolean",
+  dir: "string",
   score: "number",
 });
 
@@ -75,6 +76,7 @@ class PlazaRoom extends Room {
       p.y = y;
       p.flip = !!data.flip;
       p.moving = !!data.moving;
+      if (data.dir === "up" || data.dir === "down" || data.dir === "side") p.dir = data.dir;
     });
 
     // Recolección de moneda: validada del lado servidor.
@@ -121,6 +123,7 @@ class PlazaRoom extends Room {
     p.y = spawn.y;
     p.flip = false;
     p.moving = false;
+    p.dir = "down";
     p.score = 0;
     this.state.players.set(client.sessionId, p);
     console.log(`+ ${name} (${client.sessionId}) — ${this.state.players.size} en la plaza`);
