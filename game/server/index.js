@@ -45,8 +45,11 @@ const USERNAME_RE = /^[\p{L}\p{N} _.-]{3,14}$/u;
 // Cuentas administradoras: ADMIN_USERS="Jorge,OtroNombre" (sin distinguir mayúsculas)
 const ADMIN_SET = new Set(
   (process.env.ADMIN_USERS || "")
-    .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+    .split(",")
+    .map((s) => s.trim().replace(/^["']+|["']+$/g, "").trim().toLowerCase())
+    .filter(Boolean)
 );
+console.log("[admin] cuentas administradoras:", ADMIN_SET.size ? [...ADMIN_SET].join(", ") : "(ninguna — configura ADMIN_USERS)");
 const isAdminKey = (key) => ADMIN_SET.has(key) || users[key]?.role === "admin";
 const AVATARS = ["kai", "vera", "tato", "zoe", "max", "nina", "leo", "robi"];
 const ROOM_IDS = ["plaza", "cafe", "juegos", "auditorio", "biblioteca", "jardin", "robots", "observatorio", "taller"];
