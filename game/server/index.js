@@ -97,6 +97,40 @@ const MAX_SEATS = 12;
 
 const onlineUsers = new Set();
 
+// ---------- Sesión de evento (marcador global) ----------
+const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const session = {
+  active: false,
+  startedAt: null,
+  baseline: {},      // userKey -> coins al iniciar
+  participants: {},  // userKey -> nombre
+};
+
+function sessionJoin(key) {
+  if (!session.active || !users[key]) return;
+  if (!(key in session.baseline)) {
+    session.baseline[key] = users[key].coins || 0;
+    session.participants[key] = users[key].name;
+  }
+}
+
+function sessionResults() {
+  const rows = [];
+  for (const key of Object.keys(session.baseline)) {
+    const earned = Math.max(0, (users[key]?.coins || 0) - session.baseline[key]);
+    rows.push({ name: session.participants[key] || key, earned });
+  }
+  rows.sort((a, b) => b.earned - a.earned);
+  return rows;
+}
+
+function saveSessionLog(rows) {
+  let log = [];
+  try { log = JSON.parse(fs.readFileSync(SESSIONS_FILE, "utf8")); } catch (_) {}
+  log.push({ startedAt: session.startedAt, endedAt: new Date().toISOString(), results: rows });
+  fs.writeFile(SESSIONS_FILE, JSON.stringify(log, null, 2), () => {});
+}
+
 // ---------- Búsqueda del Tesoro (estado global entre salas) ----------
 const hunt = { active: false, area: null, x: 0, y: 0, prize: 0 };
 const liveRooms = new Set();
@@ -202,11 +236,49 @@ class SalaRoom extends Room {
       console.log(`[hunt] escondida en ${area} (${spot.x | 0},${spot.y | 0}) premio ${prize}`);
     });
 
+    this.onMessage("admin:session-start", (client) => {
+      if (!isAdmin(client)) return;
+      if (session.active) return;
+      session.active = true;
+      session.startedAt = new Date().toISOString();
+      session.baseline = {};
+      session.participants = {};
+      // Inscribir a todos los conectados ahora mismo
+      for (const r of liveRooms) {
+        r.clients.forEach((c) => { if (c.auth?.key) sessionJoin(c.auth.key); });
+      }
+      globalBroadcast("announce", {
+        text: "🏁 ¡SESIÓN DE EVENTO INICIADA! Todas las Master Coins que ganes desde ahora cuentan para el marcador final.",
+      });
+      globalBroadcast("session", { active: true });
+      console.log("[sesion] iniciada");
+    });
+
+    this.onMessage("admin:session-end", (client) => {
+      if (!isAdmin(client)) return;
+      if (!session.active) return;
+      const rows = sessionResults();
+      saveSessionLog(rows);
+      session.active = false;
+      globalBroadcast("session", { active: false });
+      globalBroadcast("leaderboard", { rows: rows.slice(0, 20) });
+      console.log("[sesion] cerrada:", rows.map((r) => `${r.name}:${r.earned}`).join(" "));
+    });
+
     this.onMessage("admin:hunt-cancel", (client) => {
       if (!isAdmin(client) || !hunt.active) return;
       hunt.active = false;
       globalBroadcast("hunt-despawn", {});
       globalBroadcast("announce", { text: "La Búsqueda del Tesoro fue cancelada." });
+    });
+
+    // El cliente pregunta al terminar de montar su escena (evita la
+    // carrera de mensajes enviados durante el join).
+    this.onMessage("hunt-query", (client) => {
+      if (hunt.active && hunt.area === this.area) {
+        client.send("hunt-spawn", { x: hunt.x, y: hunt.y, prize: hunt.prize });
+      }
+      if (session.active) client.send("session", { active: true });
     });
 
     this.onMessage("hunt-claim", (client) => {
@@ -328,6 +400,10 @@ class SalaRoom extends Room {
     this.state.players.set(client.sessionId, p);
     if (hunt.active && hunt.area === this.area) {
       client.send("hunt-spawn", { x: hunt.x, y: hunt.y, prize: hunt.prize });
+    }
+    if (session.active) {
+      sessionJoin(client.auth?.key);
+      client.send("session", { active: true });
     }
     console.log(`[sala:${this.area}] + ${p.name} (${p.avatar}) — ${this.state.players.size}`);
   }
