@@ -424,6 +424,25 @@
     color: var(--ml-mist); font-size: 13px; outline: none; text-align: center;
   }
 
+  /* --- Micrófono --- */
+  #voice-btn {
+    position: fixed; bottom: 16px; right: 14px; z-index: 5;
+    display: none; align-items: center; justify-content: center;
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 2px solid rgba(244,244,255,.25); cursor: pointer;
+    background: rgba(10,10,35,.8); font-size: 22px;
+    backdrop-filter: blur(4px);
+    transition: all .15s ease;
+  }
+  #voice-btn:hover { transform: scale(1.1); }
+  #voice-btn.on {
+    background: linear-gradient(135deg, #35d07f, #1fa864);
+    border-color: rgba(53,208,127,.7);
+    box-shadow: 0 0 22px rgba(53,208,127,.6);
+    animation: mic-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes mic-pulse { 0%,100% { box-shadow: 0 0 14px rgba(53,208,127,.4); } 50% { box-shadow: 0 0 30px rgba(53,208,127,.8); } }
+
   /* ================= CHAT ================= */
   #chat-bar {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
@@ -479,6 +498,7 @@
   <button id="chat-send">💬</button>
 </div>
 <div id="chat-toast"></div>
+<button id="voice-btn" title="Activar/desactivar micrófono">🔇</button>
 <div id="announce"></div>
 <div id="session-badge">🏁 SESIÓN DE EVENTO EN CURSO</div>
 <div id="game-banner"><div class="gb-title"></div><div class="gb-body"></div><div class="gb-time"></div></div>
@@ -599,6 +619,7 @@
 
 <script src="phaser.min.js"></script>
 <script src="colyseus.js"></script>
+<script src="livekit-client.umd.min.js"></script>
 <script>
 "use strict";
 
@@ -833,7 +854,9 @@ class PlazaScene extends Phaser.Scene {
           ? `🏆 ¡<b>${winner}</b> adivinó!` : `Nadie adivinó. La respuesta era: <b>${answer}</b>`, 6);
       });
 
+      room.onMessage("voice-token", (data) => connectVoice(data));
       room.send("hunt-query");
+      room.send("voice-token");
       room.onMessage("collected", ({ id }) => {
         const s = this.coinSprites.get(id);
         if (s) { this.collectFx(s); this.coinSprites.delete(id); }
@@ -1635,6 +1658,121 @@ function startGame() {
     scene: PlazaScene,
   });
 }
+
+/* ==================== VOZ POR PROXIMIDAD (LiveKit) ==================== */
+const VOICE_NEAR = 110;    // a esta distancia se escucha al 100%
+const VOICE_FAR = 520;     // más allá no se escucha nada
+const voice = {
+  room: null, micOn: false, available: false,
+  els: new Map(),          // identity -> <audio>
+  speaking: new Set(),     // identities hablando
+};
+
+async function disconnectVoice() {
+  if (voice.room) {
+    try { await voice.room.disconnect(); } catch (_) {}
+  }
+  voice.room = null;
+  for (const el of voice.els.values()) el.remove();
+  voice.els.clear();
+  voice.speaking.clear();
+}
+
+async function connectVoice(data) {
+  const btn = document.getElementById("voice-btn");
+  if (data.disabled || !window.LivekitClient) {
+    voice.available = false;
+    btn.style.display = "none";
+    return;
+  }
+  try {
+    await disconnectVoice();
+    const lk = new LivekitClient.Room({ adaptiveStream: false, dynacast: false });
+    const { RoomEvent } = LivekitClient;
+
+    lk.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      if (track.kind !== "audio") return;
+      const el = track.attach();
+      el.volume = 0;
+      document.body.appendChild(el);
+      voice.els.set(participant.identity, el);
+    });
+    lk.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
+      track.detach().forEach((e) => e.remove());
+      voice.els.delete(participant.identity);
+    });
+    lk.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      const el = voice.els.get(participant.identity);
+      if (el) el.remove();
+      voice.els.delete(participant.identity);
+      voice.speaking.delete(participant.identity);
+    });
+    lk.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      voice.speaking = new Set(speakers.map((s) => s.identity));
+    });
+
+    await lk.connect(data.url, data.token);
+    voice.room = lk;
+    voice.available = true;
+    btn.style.display = "flex";
+    // Mantener el estado del micro al cambiar de sala
+    if (voice.micOn) {
+      try { await lk.localParticipant.setMicrophoneEnabled(true); } catch (_) { voice.micOn = false; }
+    }
+    updateVoiceBtn();
+  } catch (e) {
+    voice.available = false;
+    btn.style.display = "none";
+    console.warn("[voz]", e);
+  }
+}
+
+function updateVoiceBtn() {
+  const btn = document.getElementById("voice-btn");
+  btn.textContent = voice.micOn ? "🎤" : "🔇";
+  btn.classList.toggle("on", voice.micOn);
+  btn.title = voice.micOn ? "Micrófono ENCENDIDO — toca para silenciar" : "Micrófono apagado — toca para hablar";
+}
+
+document.getElementById("voice-btn").addEventListener("click", async () => {
+  if (!voice.room) return;
+  try {
+    voice.micOn = !voice.micOn;
+    updateVoiceBtn();
+    await voice.room.localParticipant.setMicrophoneEnabled(voice.micOn);
+  } catch (e) {
+    voice.micOn = false;
+    updateVoiceBtn();
+    showToast("No se pudo activar el micrófono: revisa los permisos del navegador 🎤");
+  }
+});
+
+// Volumen espacial: cerca = fuerte, lejos = silencio. 5 veces por segundo.
+setInterval(() => {
+  const s = window.__plaza;
+  if (!s || !voice.room) return;
+  for (const [identity, el] of voice.els) {
+    let target = null;
+    for (const a of s.remotes.values()) {
+      if (a.tag.text.replace("🎙 ", "") === identity) { target = a; break; }
+    }
+    if (!target) { el.volume = 0; continue; }
+    const d = Math.hypot(target.x - s.me.x, target.y - s.me.y);
+    el.volume = d <= VOICE_NEAR ? 1 : Math.max(0, 1 - (d - VOICE_NEAR) / (VOICE_FAR - VOICE_NEAR));
+  }
+  // Indicador 🎙 en el nombre de quien habla (y se alcanza a oír)
+  for (const a of s.remotes.values()) {
+    const base = a.tag.text.replace("🎙 ", "");
+    const audible = (voice.els.get(base)?.volume || 0) > 0.05;
+    const talking = voice.speaking.has(base) && audible;
+    const wanted = talking ? "🎙 " + base : base;
+    if (a.tag.text !== wanted) a.tag.setText(wanted);
+  }
+  const meBase = s.me.tag.text.replace("🎙 ", "");
+  const meTalking = voice.micOn && voice.speaking.has(meBase);
+  const meWanted = meTalking ? "🎙 " + meBase : meBase;
+  if (s.me.tag.text !== meWanted) s.me.tag.setText(meWanted);
+}, 200);
 
 /* ---------- Anuncios globales ---------- */
 let announceTimer = null;

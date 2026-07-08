@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@colyseus/schema": "^2.0.35",
-    "colyseus": "^0.15.57"
+    "colyseus": "^0.15.57",
+    "livekit-server-sdk": "^2.17.0"
   }
 }

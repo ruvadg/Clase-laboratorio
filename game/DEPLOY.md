@@ -38,3 +38,28 @@ el cliente. Una URL para todo (juego + WebSocket en el mismo origen).
 cd game/server && npm install && node index.js
 # abre http://localhost:2567
 ```
+
+## 🎤 Activar la voz por proximidad (LiveKit)
+
+La voz viene integrada pero apagada hasta configurar LiveKit (~5 minutos):
+
+1. Crea una cuenta gratis en https://cloud.livekit.io
+2. Crea un proyecto → en **Settings → Keys** copia estos 3 valores:
+   - URL del proyecto (`wss://tuproyecto-xxxx.livekit.cloud`)
+   - API Key
+   - API Secret
+3. En Render → tu servicio → **Environment** → agrega:
+   - `LIVEKIT_URL` = la URL wss
+   - `LIVEKIT_API_KEY` = la key
+   - `LIVEKIT_API_SECRET` = el secret
+4. Guarda (Render redespliega solo). ¡Listo!
+
+Al entrar al juego aparecerá el botón 🔇 abajo a la derecha:
+- Tócalo para encender tu micrófono 🎤 (el navegador pedirá permiso)
+- **Escuchas según la distancia**: quien está a tu lado se oye al 100%,
+  se desvanece con la lejanía y a media sala ya no se oye
+- Cada sala del campus es un canal de voz independiente
+- Quien está hablando muestra 🎙 junto a su nombre
+
+Plan gratuito de LiveKit Cloud: hasta 100 participantes simultáneos y
+minutos de sobra para eventos semanales de una academia.

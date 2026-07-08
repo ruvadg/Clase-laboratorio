@@ -10,6 +10,13 @@ const path = require("path");
 const crypto = require("crypto");
 const { Server, Room } = require("colyseus");
 const { Schema, MapSchema, defineTypes } = require("@colyseus/schema");
+const { AccessToken } = require("livekit-server-sdk");
+
+// ---------- Voz por proximidad (LiveKit) ----------
+const LK_URL = process.env.LIVEKIT_URL || "";
+const LK_KEY = process.env.LIVEKIT_API_KEY || "";
+const LK_SECRET = process.env.LIVEKIT_API_SECRET || "";
+const VOICE_ENABLED = !!(LK_URL && LK_KEY && LK_SECRET);
 
 // ---------- Persistencia simple en disco (prototipo) ----------
 const DATA_DIR = path.join(__dirname, "data");
@@ -442,6 +449,31 @@ class SalaRoom extends Room {
       hunt.active = false;
       globalBroadcast("hunt-despawn", {});
       globalBroadcast("announce", { text: "La Búsqueda del Tesoro fue cancelada." });
+    });
+
+    // Token de voz LiveKit: identidad = nombre de la cuenta, sala = voz-<area>
+    this.onMessage("voice-token", async (client) => {
+      if (!VOICE_ENABLED) {
+        client.send("voice-token", { disabled: true });
+        return;
+      }
+      try {
+        const u = users[client.auth?.key];
+        const at = new AccessToken(LK_KEY, LK_SECRET, {
+          identity: u?.name || client.sessionId,
+          ttl: "3h",
+        });
+        at.addGrant({
+          roomJoin: true,
+          room: `voz-${this.area}`,
+          canPublish: true,
+          canSubscribe: true,
+        });
+        client.send("voice-token", { url: LK_URL, token: await at.toJwt() });
+      } catch (e) {
+        console.error("[voz] error generando token:", e.message);
+        client.send("voice-token", { disabled: true });
+      }
     });
 
     // El cliente pregunta al terminar de montar su escena (evita la
