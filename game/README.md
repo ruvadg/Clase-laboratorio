@@ -45,3 +45,17 @@ laboratorio de inteligencia artificial, bata como prenda insignia.
 > Este directorio vive temporalmente en el repo `clase-laboratorio`
 > (rama de trabajo separada). Se migrará al repo dedicado
 > `masterlab-game` cuando esté creado.
+
+## Servidor multijugador (Fase 2)
+
+```bash
+cd game/server
+npm install
+npm start          # ws://localhost:2567
+```
+
+Con el servidor corriendo, abre el juego en varias pestañas/dispositivos:
+los jugadores se ven en tiempo real, las monedas son del servidor
+(recolección validada, anti-trampas) y el chat es de proximidad
+(solo te leen a menos de ~360px). Sin servidor, el juego cae a modo
+offline single-player automáticamente.

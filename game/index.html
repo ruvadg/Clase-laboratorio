@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Campus Master Lab IA — Prototipo</title>
+<title>Campus Master Lab IA — Multijugador</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231E1EFF' d='M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -42,9 +42,7 @@
     color: var(--ml-blue);
     filter: drop-shadow(0 0 14px rgba(30,30,255,.8));
   }
-  .card h1 {
-    font-size: 22px; letter-spacing: .12em; font-weight: 800;
-  }
+  .card h1 { font-size: 22px; letter-spacing: .12em; font-weight: 800; }
   .card h1 .lab { color: var(--ml-blue); font-style: italic; }
   .card p.sub { margin: 6px 0 22px; font-size: 13px; opacity: .65; }
   .card input {
@@ -77,19 +75,55 @@
     backdrop-filter: blur(4px);
   }
   #hud img { width: 30px; height: 30px; }
+  #online-badge {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+    display: none; align-items: center; gap: 7px;
+    background: rgba(10,10,35,.72);
+    border: 1px solid rgba(244,244,255,.18);
+    border-radius: 999px; padding: 7px 14px;
+    color: var(--ml-mist); font-size: 12px; font-weight: 600;
+    backdrop-filter: blur(4px);
+  }
+  #online-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #35d07f; }
+  #online-badge.offline .dot { background: #999; }
   #brand {
     position: fixed; top: 16px; right: 16px; z-index: 5;
     display: none; color: var(--ml-mist);
     font-size: 11px; letter-spacing: .18em; font-weight: 700; opacity: .55;
   }
   #brand .lab { color: var(--ml-blue); font-style: italic; }
+
+  /* ---------- Chat ---------- */
+  #chat-bar {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 5; display: none; align-items: center; gap: 8px;
+    width: min(480px, calc(100vw - 32px));
+  }
+  #chat-input {
+    flex: 1; padding: 11px 16px;
+    border-radius: 999px; border: 1px solid rgba(244,244,255,.22);
+    background: rgba(10,10,35,.78); color: var(--ml-mist);
+    font-size: 14px; outline: none;
+    backdrop-filter: blur(4px);
+  }
+  #chat-input:focus { border-color: var(--ml-blue); box-shadow: 0 0 0 4px rgba(30,30,255,.18); }
+  #chat-send {
+    padding: 11px 18px; border: none; border-radius: 999px; cursor: pointer;
+    background: var(--ml-blue); color: white; font-weight: 700; font-size: 14px;
+  }
 </style>
 </head>
 <body>
 <div id="game-container"></div>
 
 <div id="hud"><img src="assets/coin.png" alt="moneda"><span id="coin-count">0</span></div>
+<div id="online-badge"><span class="dot"></span><span id="online-text">Conectando…</span></div>
 <div id="brand">MASTER<span class="lab">LAB</span> IA</div>
+
+<div id="chat-bar">
+  <input id="chat-input" type="text" maxlength="120" placeholder="Escribe para hablar con quien tengas cerca… (Enter)" autocomplete="off">
+  <button id="chat-send">💬</button>
+</div>
 
 <div id="welcome">
   <div class="card">
@@ -98,54 +132,40 @@
       <circle cx="52" cy="14" r="3.2"/>
     </svg>
     <h1>CAMPUS MASTER<span class="lab">LAB</span> IA</h1>
-    <p class="sub">Prototipo · Fase 1 — la Plaza Central</p>
+    <p class="sub">Fase 2 — Plaza Central multijugador</p>
     <input id="player-name" type="text" maxlength="14" placeholder="Tu nombre de científic@" autocomplete="off">
     <button id="enter-btn">Entrar al laboratorio ⚡</button>
     <div class="hints">
       🖱️ / 👆 Toca el piso para caminar &nbsp;·&nbsp; ⌨️ WASD o flechas<br>
-      🪙 Recoge las monedas Spark que aparecen en la plaza
+      💬 Chat de proximidad: solo te leen los que están cerca<br>
+      🪙 Recoge las monedas Spark de la plaza
     </div>
   </div>
 </div>
 
 <script src="phaser.min.js"></script>
+<script src="colyseus.js"></script>
 <script>
 "use strict";
 
 /* ============================================================
-   Campus Master Lab IA — Prototipo Fase 1
-   Una sala (Plaza Central), un jugador, monedas coleccionables.
-   Fase 2 añadirá multijugador (Colyseus) sobre esta misma base.
+   Campus Master Lab IA — Fase 2: multijugador
+   Cliente Phaser + Colyseus. Si el servidor no responde,
+   cae a modo offline (single-player) automáticamente.
    ============================================================ */
 
 const WORLD_W = 1920;
 const WORLD_H = 1085;
 
-// Área caminable de la plaza circular: elipse (vista isométrica)
-// sobre la imagen plaza.jpg (1920x1085), menos la fuente central.
+// Área caminable: elipse de la plaza menos la fuente (espejo del servidor).
 const FLOOR_CX = 950, FLOOR_CY = 610, FLOOR_RX = 590, FLOOR_RY = 370;
 const FOUNTAIN = { x: 945, y: 575, r: 185 };
 
-const FLOOR = [];
-for (let i = 0; i < 28; i++) {
-  const a = (i / 28) * Math.PI * 2;
-  FLOOR.push([FLOOR_CX + Math.cos(a) * FLOOR_RX, FLOOR_CY + Math.sin(a) * FLOOR_RY]);
-}
-
 function isWalkable(x, y) {
-  if (!pointInPolygon(x, y, FLOOR)) return false;
+  const dx = (x - FLOOR_CX) / FLOOR_RX;
+  const dy = (y - FLOOR_CY) / FLOOR_RY;
+  if (dx * dx + dy * dy > 1) return false;
   return Math.hypot(x - FOUNTAIN.x, y - FOUNTAIN.y) > FOUNTAIN.r;
-}
-
-function pointInPolygon(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-      inside = !inside;
-    }
-  }
-  return inside;
 }
 
 function randomFloorPoint() {
@@ -157,11 +177,18 @@ function randomFloorPoint() {
   return { x: 960, y: 880 };
 }
 
-const COIN_COUNT = 6;
-const SPEED = 340;            // px/s
+const SPEED = 340;             // px/s
 const PICKUP_DIST = 55;
+const CHAT_RADIUS = 360;       // px de proximidad para leer el chat
+const MOVE_SEND_MS = 60;       // frecuencia de envío de posición
+const OFFLINE_COINS = 6;
 
 let playerName = "Científic@";
+
+function depthScaleFor(y) {
+  const t = (y - (FLOOR_CY - FLOOR_RY)) / (FLOOR_RY * 2);
+  return 0.68 + Math.max(0, Math.min(1, t)) * 0.42;
+}
 
 class PlazaScene extends Phaser.Scene {
   constructor() { super("plaza"); }
@@ -175,28 +202,31 @@ class PlazaScene extends Phaser.Scene {
   create() {
     this.add.image(0, 0, "plaza").setOrigin(0);
 
-    // --- Jugador ---
-    this.shadow = this.add.ellipse(960, 880, 92, 30, 0x0A0A23, 0.32);
-    this.player = this.add.image(960, 880, "player").setOrigin(0.5, 0.94);
-    this.baseY = 880;
+    // --- Jugador local ---
+    const spawn = randomFloorPoint();
+    this.me = this.makeAvatar(spawn.x, spawn.y, playerName, true);
     this.target = null;
     this.moving = false;
     this.bobT = 0;
+    this.idleT = 0;
+    this.leanDir = 0;
+    this.lastSent = 0;
+    this.lastSentState = "";
 
-    this.nameTag = this.add.text(960, 880, playerName, {
-      fontFamily: "ui-sans-serif, system-ui, sans-serif",
-      fontSize: "22px", fontStyle: "bold",
-      color: "#F4F4FF",
-      stroke: "#0A0A23", strokeThickness: 5,
-    }).setOrigin(0.5, 1);
-
-    // --- Monedas ---
-    this.coins = [];
-    for (let i = 0; i < COIN_COUNT; i++) this.spawnCoin();
+    // --- Multijugador ---
+    this.room = null;
+    this.online = false;
+    this.remotes = new Map();   // sessionId -> avatar
+    this.coinSprites = new Map(); // coinId -> sprite
     this.score = 0;
+    this.connect();
+
+    // --- Offline fallback (se activa solo si el server no responde) ---
+    this.offlineCoins = [];
 
     // --- Input ---
     this.input.on("pointerdown", (p) => {
+      if (document.activeElement === chatInput) chatInput.blur();
       const wp = this.cameras.main.getWorldPoint(p.x, p.y);
       if (isWalkable(wp.x, wp.y)) {
         this.target = { x: wp.x, y: wp.y };
@@ -213,8 +243,188 @@ class PlazaScene extends Phaser.Scene {
     this.scale.on("resize", () => this.fitCamera());
   }
 
+  // ---------- Conexión ----------
+  async connect() {
+    const badge = document.getElementById("online-badge");
+    const btext = document.getElementById("online-text");
+    try {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const client = new Colyseus.Client(`${proto}://${location.hostname}:2567`);
+      this.room = await client.joinOrCreate("plaza", { name: playerName });
+      this.online = true;
+      badge.classList.remove("offline");
+
+      // Posición inicial que nos asignó el servidor
+      const meState = this.room.state.players.get(this.room.sessionId);
+      if (meState) this.placeAvatar(this.me, meState.x, meState.y);
+
+      this.room.onMessage("chat", ({ id, text }) => this.onChat(id, text));
+      this.room.onMessage("collected", ({ id, by }) => {
+        const s = this.coinSprites.get(id);
+        if (s) {
+          this.collectFx(s, by === this.room.sessionId);
+          this.coinSprites.delete(id);
+        }
+      });
+      this.room.onLeave(() => {
+        this.online = false;
+        badge.classList.add("offline");
+        btext.textContent = "Desconectado";
+      });
+    } catch (e) {
+      this.online = false;
+      badge.classList.add("offline");
+      btext.textContent = "Modo offline";
+      for (let i = 0; i < OFFLINE_COINS; i++) this.spawnOfflineCoin();
+    }
+  }
+
+  // ---------- Avatares ----------
+  makeAvatar(x, y, name, isMe) {
+    const shadow = this.add.ellipse(x, y - 4, 92, 30, 0x0A0A23, 0.32);
+    const sprite = this.add.image(x, y, "player").setOrigin(0.5, 0.94);
+    const tag = this.add.text(x, y, name, {
+      fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      fontSize: "22px", fontStyle: "bold",
+      color: isMe ? "#FFD84D" : "#F4F4FF",
+      stroke: "#0A0A23", strokeThickness: 5,
+    }).setOrigin(0.5, 1);
+    return {
+      sprite, shadow, tag,
+      x, y,            // posición lógica (pies)
+      tx: x, ty: y,    // objetivo de interpolación (remotos)
+      flip: false, moving: false,
+      bobT: 0, idleT: Math.random() * 10,
+      bubble: null, bubbleTimer: null,
+    };
+  }
+
+  placeAvatar(a, x, y) { a.x = x; a.y = y; a.tx = x; a.ty = y; }
+
+  destroyAvatar(a) {
+    a.sprite.destroy(); a.shadow.destroy(); a.tag.destroy();
+    if (a.bubble) a.bubble.destroy();
+  }
+
+  renderAvatar(a, dt) {
+    const ds = depthScaleFor(a.y);
+    if (a.moving) {
+      a.bobT += dt * 0.022;
+      const bob = Math.abs(Math.sin(a.bobT));
+      a.sprite.y = a.y - bob * 7;
+      a.sprite.angle = Math.sin(a.bobT) * 3 + (a.flip ? -2.5 : 2.5);
+      a.sprite.scaleY = ds * (1 + bob * 0.045);
+      a.sprite.scaleX = (a.flip ? -1 : 1) * ds * (1 - bob * 0.03);
+      a.shadow.setScale(1 - bob * 0.12);
+    } else {
+      a.idleT += dt * 0.004;
+      a.sprite.y = a.y;
+      a.sprite.angle = 0;
+      a.sprite.scaleY = ds * (1 + Math.sin(a.idleT) * 0.012);
+      a.sprite.scaleX = (a.flip ? -1 : 1) * ds;
+      a.shadow.setScale(1);
+      a.bobT = 0;
+    }
+    a.sprite.flipX = false; // el flip va vía scaleX
+    a.sprite.x = a.x;
+    a.shadow.setPosition(a.x, a.y - 4);
+    a.sprite.setDepth(a.y);
+    a.shadow.setDepth(a.y - 1);
+    a.tag.setDepth(a.y + 1);
+    a.tag.setPosition(a.x, a.sprite.y - a.sprite.displayHeight - 6);
+    if (a.bubble) {
+      a.bubble.setDepth(a.y + 2);
+      a.bubble.setPosition(a.x, a.tag.y - 30);
+    }
+  }
+
+  // ---------- Chat ----------
+  onChat(id, text) {
+    const isMe = this.room && id === this.room.sessionId;
+    const a = isMe ? this.me : this.remotes.get(id);
+    if (!a) return;
+    // Proximidad: solo se lee a quien está cerca
+    if (!isMe && Math.hypot(a.x - this.me.x, a.y - this.me.y) > CHAT_RADIUS) return;
+
+    if (a.bubble) { a.bubble.destroy(); a.bubble = null; }
+    if (a.bubbleTimer) a.bubbleTimer.remove();
+
+    const bubble = this.add.text(a.x, a.y - 200, text, {
+      fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      fontSize: "19px",
+      color: "#0A0A23",
+      backgroundColor: "#F4F4FF",
+      padding: { x: 12, y: 7 },
+      wordWrap: { width: 300 },
+      align: "center",
+    }).setOrigin(0.5, 1);
+    a.bubble = bubble;
+    a.bubbleTimer = this.time.delayedCall(4200, () => {
+      if (a.bubble === bubble) { bubble.destroy(); a.bubble = null; }
+    });
+  }
+
+  sendChat(text) {
+    const t = text.trim();
+    if (!t) return;
+    if (this.online && this.room) {
+      this.room.send("chat", { text: t });
+    } else {
+      this.onChatLocal(t);
+    }
+  }
+
+  onChatLocal(text) {
+    // Burbujita en modo offline
+    if (this.room) return;
+    this.onChat("__me__", text);
+  }
+
+  // ---------- Monedas ----------
+  spawnOfflineCoin() {
+    const { x, y } = randomFloorPoint();
+    const s = this.add.image(x, y, "coin").setScale(0.85);
+    s.baseY = y;
+    s.phase = Math.random() * Math.PI * 2;
+    this.offlineCoins.push(s);
+  }
+
+  makeCoinSprite(x, y) {
+    const s = this.add.image(x, y, "coin").setScale(0.85);
+    s.baseY = y;
+    s.phase = Math.random() * Math.PI * 2;
+    s.setDepth(y);
+    return s;
+  }
+
+  collectFx(coinSprite, byMe) {
+    const plus = this.add.text(coinSprite.x, coinSprite.baseY - 40, "+1", {
+      fontSize: "30px", fontStyle: "bold", color: "#FFD84D",
+      stroke: "#0A0A23", strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(99999);
+    this.tweens.add({
+      targets: plus, y: coinSprite.baseY - 110, alpha: 0, duration: 650,
+      onComplete: () => plus.destroy(),
+    });
+    this.tweens.add({
+      targets: coinSprite, y: coinSprite.baseY - 40, alpha: 0, scale: 1.1, duration: 260,
+      onComplete: () => coinSprite.destroy(),
+    });
+    if (byMe) {
+      this.score++;
+      document.getElementById("coin-count").textContent = this.score;
+    }
+  }
+
+  marker(x, y) {
+    const c = this.add.circle(x, y, 14).setStrokeStyle(3, 0x1E1EFF, 1).setDepth(99998);
+    this.tweens.add({
+      targets: c, scale: 0.2, alpha: 0, duration: 420,
+      onComplete: () => c.destroy(),
+    });
+  }
+
   fitCamera() {
-    // Zoom para que el mundo llene la pantalla sin deformarse.
     const cam = this.cameras.main;
     const zx = this.scale.width / WORLD_W;
     const zy = this.scale.height / WORLD_H;
@@ -222,123 +432,145 @@ class PlazaScene extends Phaser.Scene {
     cam.centerOn(WORLD_W / 2, WORLD_H / 2);
   }
 
-  marker(x, y) {
-    const c = this.add.circle(x, y, 14).setStrokeStyle(3, 0x1E1EFF, 1);
-    this.tweens.add({
-      targets: c, scale: 0.2, alpha: 0, duration: 420,
-      onComplete: () => c.destroy(),
-    });
-  }
+  // ---------- Loop principal ----------
+  update(time, dtMs) {
+    const dt = dtMs / 1000;
 
-  spawnCoin() {
-    const { x, y } = randomFloorPoint();
-    const coin = this.add.image(x, y, "coin").setScale(0.85);
-    coin.baseY = y;
-    coin.phase = Math.random() * Math.PI * 2;
-    this.coins.push(coin);
-  }
-
-  collect(coin) {
-    this.score++;
-    document.getElementById("coin-count").textContent = this.score;
-
-    const plus = this.add.text(coin.x, coin.y - 30, "+1", {
-      fontSize: "30px", fontStyle: "bold", color: "#FFD84D",
-      stroke: "#0A0A23", strokeThickness: 6,
-    }).setOrigin(0.5);
-    this.tweens.add({
-      targets: plus, y: coin.y - 90, alpha: 0, duration: 650,
-      onComplete: () => plus.destroy(),
-    });
-    this.tweens.add({
-      targets: coin, y: coin.y - 40, alpha: 0, scale: 1.15, duration: 260,
-      onComplete: () => coin.destroy(),
-    });
-    this.coins = this.coins.filter((c) => c !== coin);
-    this.time.delayedCall(1200, () => this.spawnCoin());
-  }
-
-  update(time, dt) {
-    const d = dt / 1000;
+    // 1) Movimiento local (teclado manda sobre el click)
     let vx = 0, vy = 0;
-
-    // Teclado
-    const k = this.keys;
-    if (k.A.isDown || k.LEFT.isDown) vx -= 1;
-    if (k.D.isDown || k.RIGHT.isDown) vx += 1;
-    if (k.W.isDown || k.UP.isDown) vy -= 1;
-    if (k.S.isDown || k.DOWN.isDown) vy += 1;
+    const typing = document.activeElement === chatInput;
+    if (!typing) {
+      const k = this.keys;
+      if (k.A.isDown || k.LEFT.isDown) vx -= 1;
+      if (k.D.isDown || k.RIGHT.isDown) vx += 1;
+      if (k.W.isDown || k.UP.isDown) vy -= 1;
+      if (k.S.isDown || k.DOWN.isDown) vy += 1;
+    }
 
     if (vx || vy) {
-      this.target = null; // el teclado manda
+      this.target = null;
       const len = Math.hypot(vx, vy);
-      vx = (vx / len) * SPEED * d;
-      vy = (vy / len) * SPEED * d;
-      this.tryMove(vx, vy);
+      this.tryMove((vx / len) * SPEED * dt, (vy / len) * SPEED * dt);
     } else if (this.target) {
-      const dx = this.target.x - this.player.x;
-      const dy = this.target.y - this.baseY;
+      const dx = this.target.x - this.me.x;
+      const dy = this.target.y - this.me.y;
       const dist = Math.hypot(dx, dy);
       if (dist < 6) {
         this.target = null;
         this.moving = false;
       } else {
-        const step = Math.min(SPEED * d, dist);
+        const step = Math.min(SPEED * dt, dist);
         this.tryMove((dx / dist) * step, (dy / dist) * step);
       }
     } else {
       this.moving = false;
     }
 
-    // Caminata fluida: bob + squash & stretch + inclinación
-    if (this.moving) {
-      this.bobT += dt * 0.022;
-      const bob = Math.abs(Math.sin(this.bobT));
-      this.player.y = this.baseY - bob * 7;
-      this.player.angle = Math.sin(this.bobT) * 3 + (this.leanDir || 0) * 2.5;
-      this.player.scaleY = this.depthScale * (1 + bob * 0.045);
-      this.player.scaleX = (this.player.flipX ? -1 : 1) * this.depthScale * (1 - bob * 0.03);
-      this.shadow.setScale(1 - bob * 0.12, 1 - bob * 0.12);
-    } else {
-      // Idle: respiración sutil
-      this.idleT = (this.idleT || 0) + dt * 0.004;
-      const br = Math.sin(this.idleT) * 0.012;
-      this.player.y = this.baseY;
-      this.player.angle = 0;
-      this.player.scaleY = this.depthScale * (1 + br);
-      this.player.scaleX = (this.player.flipX ? -1 : 1) * this.depthScale;
-      this.shadow.setScale(1, 1);
-      this.bobT = 0;
-    }
-    this.shadow.setPosition(this.player.x, this.baseY - 4);
+    this.me.moving = this.moving;
+    this.renderAvatar(this.me, dtMs);
 
-    // Pseudo-profundidad: más pequeño al fondo
-    const t = (this.baseY - (FLOOR_CY - FLOOR_RY)) / (FLOOR_RY * 2);
-    this.depthScale = 0.68 + t * 0.42;
-    this.nameTag.setPosition(this.player.x, this.player.y - this.player.displayHeight - 6);
-
-    // Monedas flotando + recolección
-    for (const coin of [...this.coins]) {
-      coin.y = coin.baseY + Math.sin(time * 0.004 + coin.phase) * 6;
-      if (Math.hypot(coin.x - this.player.x, coin.baseY - this.baseY) < PICKUP_DIST) {
-        this.collect(coin);
+    // 2) Enviar posición al servidor (throttle + solo si cambió)
+    if (this.online && this.room && time - this.lastSent > MOVE_SEND_MS) {
+      const stateStr = `${this.me.x | 0},${this.me.y | 0},${this.me.flip},${this.moving}`;
+      if (stateStr !== this.lastSentState) {
+        this.room.send("move", {
+          x: this.me.x, y: this.me.y,
+          flip: this.me.flip, moving: this.moving,
+        });
+        this.lastSentState = stateStr;
+        this.lastSent = time;
       }
+    }
+
+    // 3) Sincronizar jugadores remotos (diff del estado)
+    if (this.online && this.room) {
+      const seen = new Set();
+      this.room.state.players.forEach((p, id) => {
+        if (id === this.room.sessionId) {
+          // HUD con score validado por el servidor
+          if (p.score !== this.score) {
+            this.score = p.score;
+            document.getElementById("coin-count").textContent = this.score;
+          }
+          return;
+        }
+        seen.add(id);
+        let a = this.remotes.get(id);
+        if (!a) {
+          a = this.makeAvatar(p.x, p.y, p.name, false);
+          this.remotes.set(id, a);
+        }
+        a.tx = p.x; a.ty = p.y;
+        a.flip = !!p.flip;
+        a.moving = !!p.moving;
+      });
+      for (const [id, a] of this.remotes) {
+        if (!seen.has(id)) { this.destroyAvatar(a); this.remotes.delete(id); }
+      }
+      // Interpolación suave hacia la última posición conocida
+      for (const a of this.remotes.values()) {
+        const f = Math.min(1, dt * 12);
+        a.x += (a.tx - a.x) * f;
+        a.y += (a.ty - a.y) * f;
+        const isFar = Math.hypot(a.tx - a.x, a.ty - a.y) > 2;
+        a.moving = a.moving || isFar;
+        this.renderAvatar(a, dtMs);
+      }
+
+      // 4) Monedas del servidor (diff)
+      const seenCoins = new Set();
+      this.room.state.coins.forEach((c, id) => {
+        seenCoins.add(id);
+        if (!this.coinSprites.has(id)) {
+          this.coinSprites.set(id, this.makeCoinSprite(c.x, c.y));
+        }
+      });
+      for (const [id, s] of this.coinSprites) {
+        if (!seenCoins.has(id)) { s.destroy(); this.coinSprites.delete(id); }
+      }
+      // Animación + intento de recolección
+      for (const [id, s] of this.coinSprites) {
+        s.y = s.baseY + Math.sin(time * 0.004 + s.phase) * 6;
+        if (Math.hypot(s.x - this.me.x, s.baseY - this.me.y) < PICKUP_DIST) {
+          this.room.send("collect", { id });
+        }
+      }
+    } else {
+      // Modo offline: monedas locales
+      for (const s of [...this.offlineCoins]) {
+        s.y = s.baseY + Math.sin(time * 0.004 + s.phase) * 6;
+        if (Math.hypot(s.x - this.me.x, s.baseY - this.me.y) < PICKUP_DIST) {
+          this.offlineCoins = this.offlineCoins.filter((c) => c !== s);
+          this.collectFx(s, true);
+          this.time.delayedCall(1200, () => this.spawnOfflineCoin());
+        }
+      }
+    }
+
+    // 5) Contador de conectados
+    if (this.online && this.room) {
+      const n = this.room.state.players.size;
+      document.getElementById("online-text").textContent =
+        n === 1 ? "1 conectado" : `${n} conectados`;
     }
   }
 
   tryMove(dx, dy) {
-    const nx = this.player.x + dx;
-    const ny = this.baseY + dy;
+    const nx = this.me.x + dx;
+    const ny = this.me.y + dy;
     let movedAny = false;
-    if (isWalkable(nx, this.baseY)) { this.player.x = nx; movedAny = true; }
-    if (isWalkable(this.player.x, ny)) { this.baseY = ny; movedAny = true; }
-    if (dx !== 0) { this.player.setFlipX(dx < 0); this.leanDir = dx < 0 ? -1 : 1; }
+    if (isWalkable(nx, this.me.y)) { this.me.x = nx; movedAny = true; }
+    if (isWalkable(this.me.x, ny)) { this.me.y = ny; movedAny = true; }
+    if (dx !== 0) { this.me.flip = dx < 0; this.leanDir = dx < 0 ? -1 : 1; }
     this.moving = movedAny;
     if (!movedAny) this.target = null;
   }
 }
 
 // ---------- Arranque ----------
+const chatInput = document.getElementById("chat-input");
+let scene = null;
+
 document.getElementById("enter-btn").addEventListener("click", start);
 document.getElementById("player-name").addEventListener("keydown", (e) => {
   if (e.key === "Enter") start();
@@ -350,8 +582,10 @@ function start() {
   document.getElementById("welcome").style.display = "none";
   document.getElementById("hud").style.display = "flex";
   document.getElementById("brand").style.display = "block";
+  document.getElementById("online-badge").style.display = "flex";
+  document.getElementById("chat-bar").style.display = "flex";
 
-  new Phaser.Game({
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game-container",
     backgroundColor: "#0A0A23",
@@ -360,6 +594,29 @@ function start() {
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     scene: PlazaScene,
+  });
+  game.events.on("ready", () => { scene = game.scene.getScene("plaza"); });
+
+  // Chat: Enter dentro del input envía; Enter fuera enfoca el chat
+  chatInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      const s = window.__plaza;
+      if (s) s.sendChat(chatInput.value);
+      chatInput.value = "";
+      chatInput.blur();
+    }
+    if (e.key === "Escape") chatInput.blur();
+  });
+  document.getElementById("chat-send").addEventListener("click", () => {
+    const s = window.__plaza;
+    if (s) s.sendChat(chatInput.value);
+    chatInput.value = "";
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && document.activeElement !== chatInput) {
+      chatInput.focus();
+    }
   });
 }
 </script>
