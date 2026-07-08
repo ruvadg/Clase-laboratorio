@@ -121,13 +121,21 @@
 const WORLD_W = 1920;
 const WORLD_H = 1085;
 
-// Polígono del área caminable (el piso claro de la plaza).
-// Coordenadas sobre la imagen plaza.jpg (1920x1085).
-const FLOOR = [
-  [960, 300], [1250, 360], [1520, 480], [1660, 620],
-  [1560, 800], [1290, 950], [960, 1010], [630, 950],
-  [360, 800], [260, 620], [400, 480], [670, 360],
-];
+// Área caminable de la plaza circular: elipse (vista isométrica)
+// sobre la imagen plaza.jpg (1920x1085), menos la fuente central.
+const FLOOR_CX = 950, FLOOR_CY = 610, FLOOR_RX = 590, FLOOR_RY = 370;
+const FOUNTAIN = { x: 945, y: 575, r: 185 };
+
+const FLOOR = [];
+for (let i = 0; i < 28; i++) {
+  const a = (i / 28) * Math.PI * 2;
+  FLOOR.push([FLOOR_CX + Math.cos(a) * FLOOR_RX, FLOOR_CY + Math.sin(a) * FLOOR_RY]);
+}
+
+function isWalkable(x, y) {
+  if (!pointInPolygon(x, y, FLOOR)) return false;
+  return Math.hypot(x - FOUNTAIN.x, y - FOUNTAIN.y) > FOUNTAIN.r;
+}
 
 function pointInPolygon(x, y, poly) {
   let inside = false;
@@ -142,11 +150,11 @@ function pointInPolygon(x, y, poly) {
 
 function randomFloorPoint() {
   for (let i = 0; i < 200; i++) {
-    const x = 260 + Math.random() * (1660 - 260);
-    const y = 300 + Math.random() * (1010 - 300);
-    if (pointInPolygon(x, y, FLOOR)) return { x, y };
+    const x = FLOOR_CX - FLOOR_RX + Math.random() * FLOOR_RX * 2;
+    const y = FLOOR_CY - FLOOR_RY + Math.random() * FLOOR_RY * 2;
+    if (isWalkable(x, y)) return { x, y };
   }
-  return { x: 960, y: 700 };
+  return { x: 960, y: 880 };
 }
 
 const COIN_COUNT = 6;
@@ -168,13 +176,14 @@ class PlazaScene extends Phaser.Scene {
     this.add.image(0, 0, "plaza").setOrigin(0);
 
     // --- Jugador ---
-    this.player = this.add.image(960, 760, "player").setOrigin(0.5, 0.92);
-    this.baseY = 760;
+    this.shadow = this.add.ellipse(960, 880, 92, 30, 0x0A0A23, 0.32);
+    this.player = this.add.image(960, 880, "player").setOrigin(0.5, 0.94);
+    this.baseY = 880;
     this.target = null;
     this.moving = false;
     this.bobT = 0;
 
-    this.nameTag = this.add.text(960, 760, playerName, {
+    this.nameTag = this.add.text(960, 880, playerName, {
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
       fontSize: "22px", fontStyle: "bold",
       color: "#F4F4FF",
@@ -189,7 +198,7 @@ class PlazaScene extends Phaser.Scene {
     // --- Input ---
     this.input.on("pointerdown", (p) => {
       const wp = this.cameras.main.getWorldPoint(p.x, p.y);
-      if (pointInPolygon(wp.x, wp.y, FLOOR)) {
+      if (isWalkable(wp.x, wp.y)) {
         this.target = { x: wp.x, y: wp.y };
         this.marker(wp.x, wp.y);
       }
@@ -281,20 +290,31 @@ class PlazaScene extends Phaser.Scene {
       this.moving = false;
     }
 
-    // Bob al caminar + flip por dirección
+    // Caminata fluida: bob + squash & stretch + inclinación
     if (this.moving) {
-      this.bobT += dt * 0.02;
-      this.player.y = this.baseY + Math.sin(this.bobT) * 5;
-      this.player.angle = Math.sin(this.bobT) * 2.2;
+      this.bobT += dt * 0.022;
+      const bob = Math.abs(Math.sin(this.bobT));
+      this.player.y = this.baseY - bob * 7;
+      this.player.angle = Math.sin(this.bobT) * 3 + (this.leanDir || 0) * 2.5;
+      this.player.scaleY = this.depthScale * (1 + bob * 0.045);
+      this.player.scaleX = (this.player.flipX ? -1 : 1) * this.depthScale * (1 - bob * 0.03);
+      this.shadow.setScale(1 - bob * 0.12, 1 - bob * 0.12);
     } else {
+      // Idle: respiración sutil
+      this.idleT = (this.idleT || 0) + dt * 0.004;
+      const br = Math.sin(this.idleT) * 0.012;
       this.player.y = this.baseY;
       this.player.angle = 0;
+      this.player.scaleY = this.depthScale * (1 + br);
+      this.player.scaleX = (this.player.flipX ? -1 : 1) * this.depthScale;
+      this.shadow.setScale(1, 1);
       this.bobT = 0;
     }
+    this.shadow.setPosition(this.player.x, this.baseY - 4);
 
     // Pseudo-profundidad: más pequeño al fondo
-    const t = (this.baseY - 300) / (1010 - 300);
-    this.player.setScale(0.72 + t * 0.38);
+    const t = (this.baseY - (FLOOR_CY - FLOOR_RY)) / (FLOOR_RY * 2);
+    this.depthScale = 0.68 + t * 0.42;
     this.nameTag.setPosition(this.player.x, this.player.y - this.player.displayHeight - 6);
 
     // Monedas flotando + recolección
@@ -310,9 +330,9 @@ class PlazaScene extends Phaser.Scene {
     const nx = this.player.x + dx;
     const ny = this.baseY + dy;
     let movedAny = false;
-    if (pointInPolygon(nx, this.baseY, FLOOR)) { this.player.x = nx; movedAny = true; }
-    if (pointInPolygon(this.player.x, ny, FLOOR)) { this.baseY = ny; movedAny = true; }
-    if (dx !== 0) this.player.setFlipX(dx < 0);
+    if (isWalkable(nx, this.baseY)) { this.player.x = nx; movedAny = true; }
+    if (isWalkable(this.player.x, ny)) { this.baseY = ny; movedAny = true; }
+    if (dx !== 0) { this.player.setFlipX(dx < 0); this.leanDir = dx < 0 ? -1 : 1; }
     this.moving = movedAny;
     if (!movedAny) this.target = null;
   }

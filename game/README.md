@@ -38,7 +38,7 @@ No requiere build ni dependencias: Phaser 3 va incluido (`phaser.min.js`).
 ## Assets
 
 Todo el arte se genera con IA vía Higgsfield (GPT Image 2) siguiendo la
-guía de estilo: cel-shaded tipo Brawl Stars, paleta Master Lab IA
+guía de estilo: render 3D estilizado tipo Oddsparks/Supercell (materiales clay, iluminación de estudio), paleta Master Lab IA
 (azul `#1E1EFF`, tinta `#0A0A23`, neblina `#F4F4FF`), ambientación de
 laboratorio de inteligencia artificial, bata como prenda insignia.
 
