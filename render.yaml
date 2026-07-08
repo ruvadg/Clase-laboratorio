@@ -1,0 +1,11 @@
+# Blueprint de Render.com — Campus Master Lab IA
+# Un solo servicio: el servidor Colyseus sirve también el juego.
+services:
+  - type: web
+    name: masterlab-game
+    runtime: node
+    rootDir: game/server
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    autoDeploy: true

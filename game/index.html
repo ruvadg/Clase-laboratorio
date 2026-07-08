@@ -1478,7 +1478,9 @@ async function doAuth() {
   btn.textContent = "Conectando…";
   try {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    client = new Colyseus.Client(`${proto}://${location.hostname}:2567`);
+    const isDev = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port !== "2567";
+    const wsHost = isDev ? `${location.hostname}:2567` : location.host;
+    client = new Colyseus.Client(`${proto}://${wsHost}`);
     room = await client.joinOrCreate("sala", {
       username: user, password: pass, register: isRegister, area: "plaza",
     });

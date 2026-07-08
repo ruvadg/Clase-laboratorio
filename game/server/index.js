@@ -602,8 +602,33 @@ class SalaRoom extends Room {
   }
 }
 
+// ---------- Servidor de archivos estáticos (el juego mismo) ----------
+const STATIC_ROOT = path.join(__dirname, "..");
+const MIME = {
+  ".html": "text/html; charset=utf-8", ".js": "application/javascript",
+  ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml",
+  ".json": "application/json", ".webp": "image/webp",
+};
+
+function serveStatic(req, res) {
+  let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+  if (urlPath === "/") urlPath = "/index.html";
+  const filePath = path.normalize(path.join(STATIC_ROOT, urlPath));
+  if (!filePath.startsWith(STATIC_ROOT) || filePath.includes("server")) {
+    res.writeHead(403); res.end(); return;
+  }
+  fs.readFile(filePath, (err, data) => {
+    if (err) { res.writeHead(404); res.end("404"); return; }
+    res.writeHead(200, {
+      "Content-Type": MIME[path.extname(filePath)] || "application/octet-stream",
+      "Cache-Control": filePath.endsWith(".html") ? "no-cache" : "public, max-age=86400",
+    });
+    res.end(data);
+  });
+}
+
 const port = Number(process.env.PORT) || 2567;
-const gameServer = new Server({ server: http.createServer() });
+const gameServer = new Server({ server: http.createServer(serveStatic) });
 gameServer.define("sala", SalaRoom).filterBy(["area"]);
 gameServer.listen(port).then(() => {
   console.log(`🧪✦ Servidor Campus Master Lab IA (9 salas) en ws://0.0.0.0:${port}`);
