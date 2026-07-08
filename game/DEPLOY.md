@@ -27,11 +27,13 @@ el cliente. Una URL para todo (juego + WebSocket en el mismo origen).
 3. Agrega un **Volume** montado en `game/server/data` (persistencia real).
    Costo típico: ~$5/mes con volumen incluido.
 
-## Primer arranque en producción
-1. Abre la URL, crea la cuenta del administrador (p. ej. `Jorge`).
-2. En el servidor, edita `server/data/users.json` y agrega
-   `"role": "admin"` a esa cuenta (en Render: pestaña Shell del servicio).
-3. Reinicia el servicio. ¡El Panel de Host ⚡ ya es tuyo!
+## Activar tu cuenta de administrador
+1. En Render → tu servicio → **Environment**, agrega:
+   `ADMIN_USERS` = `Jorge` (o varios separados por coma: `Jorge,Maestra Ana`)
+2. Guarda (Render redespliega solo).
+3. Abre el juego y **crea/inicia sesión con ese nombre exacto** — verás el
+   botón dorado **⚡ Panel de Host**. Funciona aunque el plan gratuito
+   reinicie los datos, porque el rol viene de la variable de entorno.
 
 ## Desarrollo local
 ```bash

@@ -41,6 +41,13 @@ function hashPassword(password, salt) {
 }
 
 const USERNAME_RE = /^[\p{L}\p{N} _.-]{3,14}$/u;
+
+// Cuentas administradoras: ADMIN_USERS="Jorge,OtroNombre" (sin distinguir mayúsculas)
+const ADMIN_SET = new Set(
+  (process.env.ADMIN_USERS || "")
+    .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+);
+const isAdminKey = (key) => ADMIN_SET.has(key) || users[key]?.role === "admin";
 const AVATARS = ["kai", "vera", "tato", "zoe", "max", "nina", "leo", "robi"];
 const ROOM_IDS = ["plaza", "cafe", "juegos", "auditorio", "biblioteca", "jardin", "robots", "observatorio", "taller"];
 
@@ -225,7 +232,7 @@ class SalaRoom extends Room {
     liveRooms.add(this);
     console.log(`[sala:${this.area}] creada`);
 
-    const isAdmin = (client) => users[client.auth?.key]?.role === "admin";
+    const isAdmin = (client) => isAdminKey(client.auth?.key);
     const give = (p, key, n) => {
       p.score += n;
       const u = users[key];
@@ -619,7 +626,7 @@ class SalaRoom extends Room {
     p.dir = "down";
     p.sit = -1;
     p.score = u.coins || 0;
-    p.admin = u.role === "admin";
+    p.admin = isAdminKey(client.auth?.key);
     this.state.players.set(client.sessionId, p);
     if (hunt.active && hunt.area === this.area) {
       client.send("hunt-spawn", { x: hunt.x, y: hunt.y, prize: hunt.prize });
