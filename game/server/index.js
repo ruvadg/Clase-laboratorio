@@ -67,6 +67,7 @@ class Player extends Schema {}
 defineTypes(Player, {
   name: "string",
   avatar: "string",
+  admin: "boolean",
   x: "number",
   y: "number",
   flip: "boolean",
@@ -95,6 +96,18 @@ const EMOTE_COOLDOWN_MS = 1200;
 const MAX_SEATS = 12;
 
 const onlineUsers = new Set();
+
+// ---------- Búsqueda del Tesoro (estado global entre salas) ----------
+const hunt = { active: false, area: null, x: 0, y: 0, prize: 0 };
+const liveRooms = new Set();
+function globalBroadcast(type, data) {
+  for (const r of liveRooms) r.broadcast(type, data);
+}
+const ROOM_NAMES = {
+  plaza: "Plaza Central", cafe: "Café IA", juegos: "Sala de Juegos",
+  auditorio: "Auditorio", biblioteca: "Biblioteca", jardin: "Jardín Neural",
+  robots: "Lab de Robots", observatorio: "Observatorio", taller: "Taller Maker",
+};
 
 class SalaRoom extends Room {
   async onAuth(client, options) {
@@ -155,7 +168,61 @@ class SalaRoom extends Room {
     this.randomFloorPoint = makeRandomFloorPoint(this.isWalkable);
 
     for (let i = 0; i < COIN_COUNT; i++) this.spawnCoin();
+    liveRooms.add(this);
     console.log(`[sala:${this.area}] creada`);
+
+    const isAdmin = (client) => users[client.auth?.key]?.role === "admin";
+
+    // --- Panel de Host ---
+    this.onMessage("admin:announce", (client, data) => {
+      if (!isAdmin(client)) return;
+      const text = String(data?.text || "").trim().slice(0, 140);
+      if (!text) return;
+      globalBroadcast("announce", { text });
+    });
+
+    this.onMessage("admin:hunt", (client, data) => {
+      if (!isAdmin(client)) return;
+      const area = ROOM_IDS.includes(data?.area) ? data.area : null;
+      const prize = Math.max(1, Math.min(500, Number(data?.prize) || 100));
+      if (!area || hunt.active) return;
+      const walk = makeIsWalkable(area === "plaza");
+      const spot = makeRandomFloorPoint(walk)();
+      hunt.active = true;
+      hunt.area = area;
+      hunt.x = spot.x;
+      hunt.y = spot.y;
+      hunt.prize = prize;
+      globalBroadcast("announce", {
+        text: `🔎 ¡BÚSQUEDA DEL TESORO! Una Chispa Dorada de ${prize} Master Coins está escondida en el campus…`,
+      });
+      for (const r of liveRooms) {
+        if (r.area === area) r.broadcast("hunt-spawn", { x: hunt.x, y: hunt.y, prize });
+      }
+      console.log(`[hunt] escondida en ${area} (${spot.x | 0},${spot.y | 0}) premio ${prize}`);
+    });
+
+    this.onMessage("admin:hunt-cancel", (client) => {
+      if (!isAdmin(client) || !hunt.active) return;
+      hunt.active = false;
+      globalBroadcast("hunt-despawn", {});
+      globalBroadcast("announce", { text: "La Búsqueda del Tesoro fue cancelada." });
+    });
+
+    this.onMessage("hunt-claim", (client) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p || !hunt.active || hunt.area !== this.area) return;
+      if (Math.hypot(p.x - hunt.x, p.y - hunt.y) > 95) return;
+      hunt.active = false;
+      p.score += hunt.prize;
+      const u = users[client.auth?.key];
+      if (u) { u.coins = p.score; saveUsers(); }
+      globalBroadcast("hunt-despawn", {});
+      globalBroadcast("announce", {
+        text: `🏆 ¡${p.name} encontró la Chispa Dorada en ${ROOM_NAMES[this.area]}! +${hunt.prize} Master Coins`,
+      });
+      console.log(`[hunt] encontrada por ${p.name} (+${hunt.prize})`);
+    });
 
     this.onMessage("move", (client, data) => {
       const p = this.state.players.get(client.sessionId);
@@ -257,8 +324,16 @@ class SalaRoom extends Room {
     p.dir = "down";
     p.sit = -1;
     p.score = u.coins || 0;
+    p.admin = u.role === "admin";
     this.state.players.set(client.sessionId, p);
+    if (hunt.active && hunt.area === this.area) {
+      client.send("hunt-spawn", { x: hunt.x, y: hunt.y, prize: hunt.prize });
+    }
     console.log(`[sala:${this.area}] + ${p.name} (${p.avatar}) — ${this.state.players.size}`);
+  }
+
+  onDispose() {
+    liveRooms.delete(this);
   }
 
   onLeave(client) {

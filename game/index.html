@@ -265,6 +265,66 @@
   }
   #fade.on { opacity: 1; pointer-events: all; }
 
+  /* --- Anuncios globales --- */
+  #announce {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%) translateY(-20px);
+    z-index: 7; display: none; max-width: min(640px, calc(100vw - 30px));
+    background: linear-gradient(135deg, rgba(30,30,255,.92), rgba(10,10,35,.94));
+    border: 1px solid rgba(53,200,255,.5);
+    color: var(--ml-mist); font-weight: 700; font-size: 14.5px;
+    padding: 12px 22px; border-radius: 14px; text-align: center;
+    box-shadow: 0 12px 40px rgba(30,30,255,.5);
+    opacity: 0; transition: all .35s ease;
+    backdrop-filter: blur(6px);
+  }
+  #announce.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* --- Panel de Host (admin) --- */
+  #admin-btn {
+    position: fixed; bottom: 72px; left: 14px; z-index: 5;
+    display: none; align-items: center; gap: 7px;
+    background: linear-gradient(135deg, #FFD84D, #ff9d2e);
+    border: none; border-radius: 999px; padding: 10px 18px;
+    color: #0A0A23; font-size: 13px; font-weight: 900;
+    cursor: pointer; box-shadow: 0 6px 22px rgba(255,180,50,.45);
+    transition: transform .12s ease;
+  }
+  #admin-btn:hover { transform: scale(1.05); }
+  #admin-panel {
+    position: fixed; inset: 0; z-index: 8;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(10,10,35,.7); backdrop-filter: blur(6px);
+  }
+  #admin-panel .inner {
+    width: min(520px, calc(100vw - 32px));
+    background: rgba(10,10,35,.9);
+    border: 1px solid rgba(255,216,77,.35);
+    border-radius: 20px; padding: 22px; text-align: center;
+  }
+  #admin-panel h3 { color: #FFD84D; letter-spacing: .12em; font-size: 15px; margin-bottom: 14px; font-weight: 900; }
+  #admin-panel .sec { margin-bottom: 16px; padding: 14px; border-radius: 14px; background: rgba(244,244,255,.05); }
+  #admin-panel .sec h4 { color: var(--ml-mist); font-size: 12.5px; margin-bottom: 10px; letter-spacing: .06em; }
+  #hunt-rooms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 10px; }
+  .hunt-room {
+    padding: 9px 4px; border-radius: 10px; cursor: pointer; font-size: 11.5px; font-weight: 700;
+    background: rgba(244,244,255,.06); border: 1.5px solid rgba(244,244,255,.15);
+    color: var(--ml-mist); transition: all .13s ease;
+  }
+  .hunt-room.sel { border-color: #FFD84D; background: rgba(255,216,77,.15); }
+  #admin-panel input {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid rgba(244,244,255,.25); background: rgba(10,10,35,.6);
+    color: var(--ml-mist); font-size: 13.5px; outline: none; text-align: center;
+  }
+  #admin-panel .row { display: flex; gap: 8px; margin-top: 8px; }
+  #admin-panel .act {
+    flex: 1; padding: 11px; border: none; border-radius: 10px; cursor: pointer;
+    font-weight: 800; font-size: 13px;
+  }
+  .act.gold { background: linear-gradient(135deg, #FFD84D, #ff9d2e); color: #0A0A23; }
+  .act.blue { background: var(--ml-blue); color: white; }
+  .act.ghost { background: rgba(244,244,255,.1); color: var(--ml-mist); }
+
   /* ================= CHAT ================= */
   #chat-bar {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
@@ -320,6 +380,30 @@
   <button id="chat-send">💬</button>
 </div>
 <div id="chat-toast"></div>
+<div id="announce"></div>
+<button id="admin-btn">⚡ Panel de Host</button>
+<div id="admin-panel">
+  <div class="inner">
+    <h3>⚡ PANEL DE HOST</h3>
+    <div class="sec">
+      <h4>🔎 BÚSQUEDA DEL TESORO — esconde la Chispa Dorada ✦</h4>
+      <div id="hunt-rooms"></div>
+      <input id="hunt-prize" type="number" min="1" max="500" value="100" placeholder="Premio en Master Coins">
+      <div class="row">
+        <button id="hunt-go" class="act gold">Esconder Chispa ✦</button>
+        <button id="hunt-cancel" class="act ghost">Cancelar búsqueda</button>
+      </div>
+    </div>
+    <div class="sec">
+      <h4>📣 ANUNCIO GLOBAL (a todas las salas)</h4>
+      <input id="admin-msg" type="text" maxlength="140" placeholder="Escribe una pista o anuncio…">
+      <div class="row">
+        <button id="admin-send" class="act blue">Enviar anuncio</button>
+      </div>
+    </div>
+    <button id="admin-close" class="act ghost" style="width:100%">Cerrar</button>
+  </div>
+</div>
 <div id="fade">VIAJANDO… ✦</div>
 
 <!-- ============ PANTALLA DE INICIO ============ -->
@@ -543,6 +627,9 @@ class PlazaScene extends Phaser.Scene {
         const a = id === room.sessionId ? this.me : this.remotes.get(id);
         if (a) this.playEmote(a, type);
       });
+      room.onMessage("announce", ({ text }) => showAnnounce(text));
+      room.onMessage("hunt-spawn", ({ x, y, prize }) => this.spawnHuntSpark(x, y, prize));
+      room.onMessage("hunt-despawn", () => this.despawnHuntSpark());
       room.onMessage("collected", ({ id }) => {
         const s = this.coinSprites.get(id);
         if (s) { this.collectFx(s); this.coinSprites.delete(id); }
@@ -591,6 +678,28 @@ class PlazaScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.fitCamera();
     this.scale.on("resize", () => this.fitCamera());
+  }
+
+  /* ---------- Búsqueda del Tesoro ---------- */
+  spawnHuntSpark(x, y, prize) {
+    this.despawnHuntSpark();
+    const glow = this.add.ellipse(x, y, 120, 48, 0xFFD84D, 0.25);
+    const star = this.add.text(x, y - 34, "✦", {
+      fontSize: "84px", color: "#FFD84D",
+      stroke: "#8a5a00", strokeThickness: 6,
+    }).setOrigin(0.5);
+    star.setDepth(y); glow.setDepth(y - 1);
+    this.tweens.add({ targets: star, y: y - 52, duration: 900, yoyo: true, repeat: -1, ease: "sine.inOut" });
+    this.tweens.add({ targets: star, angle: { from: -8, to: 8 }, duration: 1300, yoyo: true, repeat: -1, ease: "sine.inOut" });
+    this.tweens.add({ targets: glow, scaleX: 1.3, scaleY: 1.3, alpha: 0.12, duration: 900, yoyo: true, repeat: -1 });
+    this.huntSpark = { star, glow, x, y, prize };
+  }
+
+  despawnHuntSpark() {
+    if (!this.huntSpark) return;
+    this.huntSpark.star.destroy();
+    this.huntSpark.glow.destroy();
+    this.huntSpark = null;
   }
 
   /* ---------- Asientos ---------- */
@@ -998,6 +1107,11 @@ class PlazaScene extends Phaser.Scene {
         }
       }
 
+      if (this.huntSpark &&
+          Math.hypot(this.huntSpark.x - this.me.x, this.huntSpark.y - this.me.y) < 80) {
+        room.send("hunt-claim");
+      }
+
       const n = room.state.players.size;
       document.getElementById("online-text").textContent =
         n === 1 ? "1 conectado" : `${n} conectados`;
@@ -1262,6 +1376,8 @@ function startGame() {
     bar.appendChild(b);
   }
 
+  setTimeout(setupAdminPanel, 600);
+
   game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game-container",
@@ -1272,6 +1388,60 @@ function startGame() {
     },
     scene: PlazaScene,
   });
+}
+
+/* ---------- Anuncios globales ---------- */
+let announceTimer = null;
+function showAnnounce(text) {
+  const el = document.getElementById("announce");
+  el.textContent = text;
+  el.style.display = "block";
+  requestAnimationFrame(() => el.classList.add("on"));
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => {
+    el.classList.remove("on");
+    setTimeout(() => { el.style.display = "none"; }, 380);
+  }, 6500);
+}
+
+/* ---------- Panel de Host (admin) ---------- */
+let huntArea = "jardin";
+function setupAdminPanel() {
+  if (!online || !room) return;
+  const me = room.state.players.get(room.sessionId);
+  if (!me || !me.admin) return;
+  document.getElementById("admin-btn").style.display = "flex";
+
+  const grid = document.getElementById("hunt-rooms");
+  grid.innerHTML = "";
+  for (const r of ROOMS) {
+    const b = document.createElement("button");
+    b.className = "hunt-room" + (r.id === huntArea ? " sel" : "");
+    b.textContent = `${r.emoji} ${r.name}`;
+    b.addEventListener("click", () => {
+      huntArea = r.id;
+      document.querySelectorAll(".hunt-room").forEach((x) => x.classList.remove("sel"));
+      b.classList.add("sel");
+    });
+    grid.appendChild(b);
+  }
+
+  document.getElementById("admin-btn").onclick = () =>
+    document.getElementById("admin-panel").style.display = "flex";
+  document.getElementById("admin-close").onclick = () =>
+    document.getElementById("admin-panel").style.display = "none";
+  document.getElementById("hunt-go").onclick = () => {
+    const prize = Number(document.getElementById("hunt-prize").value) || 100;
+    room.send("admin:hunt", { area: huntArea, prize });
+    document.getElementById("admin-panel").style.display = "none";
+  };
+  document.getElementById("hunt-cancel").onclick = () => room.send("admin:hunt-cancel");
+  document.getElementById("admin-send").onclick = () => {
+    const t = document.getElementById("admin-msg").value.trim();
+    if (!t) return;
+    room.send("admin:announce", { text: t });
+    document.getElementById("admin-msg").value = "";
+  };
 }
 
 /* ---------- Chat UI ---------- */
