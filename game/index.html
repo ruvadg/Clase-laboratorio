@@ -259,7 +259,7 @@
     position: fixed; inset: 0; z-index: 7;
     background: var(--ml-ink);
     opacity: 0; pointer-events: none;
-    transition: opacity .35s ease;
+    transition: opacity .18s ease;
     display: flex; align-items: center; justify-content: center;
     color: var(--ml-mist); font-weight: 800; letter-spacing: .1em; font-size: 15px;
   }
@@ -1419,12 +1419,15 @@ async function travel(to) {
 
   try {
     if (online && room) {
-      await room.leave();
-      room = await client.joinOrCreate("sala", {
+      const oldRoom = room;
+      // Join y leave en paralelo: el servidor expulsa la sesión vieja solo
+      const joinP = client.joinOrCreate("sala", {
         username: CREDS.username, password: CREDS.password, register: false, area: to,
       });
+      oldRoom.leave().catch(() => {});
+      room = await joinP;
       await new Promise((resolve) => {
-        const t = setTimeout(resolve, 1500);
+        const t = setTimeout(resolve, 800);
         room.onStateChange.once(() => { clearTimeout(t); resolve(); });
       });
     }
@@ -1433,7 +1436,7 @@ async function travel(to) {
   } catch (e) {
     showToast("No se pudo viajar: " + ((e && e.message) || "error"));
   }
-  setTimeout(() => fade.classList.remove("on"), 450);
+  setTimeout(() => fade.classList.remove("on"), 200);
 }
 
 /* ==================== FLUJO DE PANTALLAS ==================== */

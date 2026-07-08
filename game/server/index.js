@@ -95,7 +95,11 @@ const EMOTES = ["dance", "laugh", "wave", "heart", "party"];
 const EMOTE_COOLDOWN_MS = 1200;
 const MAX_SEATS = 12;
 
-const onlineUsers = new Set();
+const onlineUsers = new Map();          // userKey -> sessionId activo
+const passCache = new Map();            // userKey -> sha256(pass+salt) verificado
+function fastHash(password, salt) {
+  return crypto.createHash("sha256").update(password + ":" + salt).digest("hex");
+}
 
 // ---------- Sesión de evento (marcador global) ----------
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
@@ -171,20 +175,29 @@ class SalaRoom extends Room {
       saveUsers();
     } else {
       const u = users[key];
-      if (!u || u.hash !== hashPassword(password, u.salt)) {
-        throw new Error("Nombre o contraseña incorrectos.");
+      if (!u) throw new Error("Nombre o contraseña incorrectos.");
+      // Cache de verificación: al viajar entre salas evita repetir scrypt (~80ms)
+      const fh = fastHash(password, u.salt);
+      if (passCache.get(key) !== fh) {
+        if (u.hash !== hashPassword(password, u.salt)) {
+          throw new Error("Nombre o contraseña incorrectos.");
+        }
+        passCache.set(key, fh);
       }
     }
 
-    // Al viajar entre salas hay un leave+join rápido: dar margen a que
-    // la sesión anterior se libere antes de rechazar por doble sesión.
-    for (let i = 0; i < 8 && onlineUsers.has(key); i++) {
-      await new Promise((r) => setTimeout(r, 250));
-    }
+    // Takeover: si la cuenta ya tiene una sesión (viaje entre salas o
+    // reconexión), se expulsa la conexión anterior al instante.
     if (onlineUsers.has(key)) {
-      throw new Error("Esa cuenta ya está conectada en otro dispositivo.");
+      for (const r of liveRooms) {
+        for (const c of [...r.clients]) {
+          if (c.auth?.key === key) {
+            try { c.leave(4001); } catch (_) {}
+          }
+        }
+      }
     }
-    onlineUsers.add(key);
+    onlineUsers.set(key, client.sessionId);
     return { key };
   }
 
@@ -594,7 +607,9 @@ class SalaRoom extends Room {
     const p = this.state.players.get(client.sessionId);
     const u = users[client.auth?.key];
     if (p && u) { u.coins = p.score; saveUsers(); }
-    if (client.auth?.key) onlineUsers.delete(client.auth.key);
+    if (client.auth?.key && onlineUsers.get(client.auth.key) === client.sessionId) {
+      onlineUsers.delete(client.auth.key);
+    }
     this.state.players.delete(client.sessionId);
     this.chatLog.delete(client.sessionId);
     this.lastEmoteAt.delete(client.sessionId);
