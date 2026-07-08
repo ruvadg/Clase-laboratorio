@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Campus Master Lab IA — Multijugador</title>
+<title>Campus Master Lab IA</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%231E1EFF' d='M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z'/%3E%3C/svg%3E">
 <style>
   :root {
     --ml-blue: #1E1EFF;
+    --ml-cyan: #35c8ff;
     --ml-ink: #0A0A23;
     --ml-mist: #F4F4FF;
   }
@@ -21,49 +22,161 @@
   }
   #game-container { width: 100%; height: 100%; }
 
-  /* ---------- Overlay de bienvenida ---------- */
+  /* ================= PANTALLA DE INICIO ================= */
   #welcome {
     position: fixed; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(circle at 50% 35%, rgba(30,30,255,.25), transparent 60%), var(--ml-ink);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 26px;
+    background: var(--ml-ink);
+    overflow: hidden;
   }
+  #welcome .bg {
+    position: absolute; inset: 0;
+    background: url("assets/splash.jpg") center/cover no-repeat;
+    animation: slow-zoom 26s ease-in-out infinite alternate;
+  }
+  @keyframes slow-zoom { from { transform: scale(1); } to { transform: scale(1.07); } }
+  #welcome .veil {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(10,10,35,.35) 0%, rgba(10,10,35,.08) 40%, rgba(10,10,35,.78) 100%);
+  }
+
+  /* --- Logo del juego (Master Lab IA adaptado al mundo) --- */
+  .game-logo { position: relative; text-align: center; z-index: 1; user-select: none; }
+  .game-logo .spark-wrap {
+    width: 92px; height: 92px; margin: 0 auto 6px;
+    animation: float-spark 3.6s ease-in-out infinite;
+    filter: drop-shadow(0 0 22px rgba(53,200,255,.95)) drop-shadow(0 0 60px rgba(30,30,255,.6));
+  }
+  @keyframes float-spark {
+    0%, 100% { transform: translateY(0) rotate(-3deg); }
+    50% { transform: translateY(-10px) rotate(3deg); }
+  }
+  .game-logo .campus {
+    font-size: 15px; letter-spacing: .5em; font-weight: 700;
+    color: var(--ml-cyan); text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(53,200,255,.8);
+    margin-bottom: 2px;
+  }
+  .game-logo h1 {
+    font-size: clamp(34px, 7vw, 58px);
+    font-weight: 900; letter-spacing: .06em;
+    color: var(--ml-mist);
+    text-shadow: 0 3px 0 rgba(10,10,35,.9), 0 0 34px rgba(30,30,255,.85), 0 10px 34px rgba(10,10,35,.9);
+  }
+  .game-logo h1 .lab { color: var(--ml-cyan); font-style: italic; text-shadow: 0 3px 0 rgba(10,10,35,.9), 0 0 30px rgba(53,200,255,.95); }
+  .game-logo .ia {
+    display: inline-block; margin-left: 10px; padding: 3px 12px;
+    border-radius: 9px; background: var(--ml-blue);
+    color: white; font-size: .55em; vertical-align: middle;
+    box-shadow: 0 0 22px rgba(30,30,255,.9);
+  }
+
+  /* --- Tarjeta de autenticación --- */
   .card {
-    width: min(440px, calc(100vw - 40px));
-    background: rgba(244,244,255,.04);
-    border: 1px solid rgba(244,244,255,.15);
-    border-radius: 16px;
-    padding: 36px 32px;
+    position: relative; z-index: 1;
+    width: min(400px, calc(100vw - 40px));
+    background: rgba(10,10,35,.66);
+    border: 1px solid rgba(244,244,255,.18);
+    border-radius: 18px;
+    padding: 24px 26px 22px;
     text-align: center;
     color: var(--ml-mist);
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 24px 70px rgba(10,10,35,.55);
   }
-  .spark {
-    width: 54px; height: 54px; margin: 0 auto 18px;
-    color: var(--ml-blue);
-    filter: drop-shadow(0 0 14px rgba(30,30,255,.8));
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tabs button {
+    flex: 1; padding: 9px; border: none; cursor: pointer;
+    border-radius: 9px; font-weight: 700; font-size: 13px;
+    background: transparent; color: rgba(244,244,255,.55);
+    transition: all .15s ease;
   }
-  .card h1 { font-size: 22px; letter-spacing: .12em; font-weight: 800; }
-  .card h1 .lab { color: var(--ml-blue); font-style: italic; }
-  .card p.sub { margin: 6px 0 22px; font-size: 13px; opacity: .65; }
+  .tabs button.active { background: var(--ml-blue); color: white; box-shadow: 0 4px 18px rgba(30,30,255,.5); }
   .card input {
-    width: 100%; padding: 12px 16px;
+    width: 100%; padding: 12px 16px; margin-bottom: 10px;
     border-radius: 10px; border: 1px solid rgba(244,244,255,.25);
     background: rgba(10,10,35,.6); color: var(--ml-mist);
     font-size: 15px; text-align: center; outline: none;
   }
-  .card input:focus { border-color: var(--ml-blue); box-shadow: 0 0 0 4px rgba(30,30,255,.18); }
-  .card button {
-    margin-top: 14px; width: 100%; padding: 13px;
+  .card input:focus { border-color: var(--ml-cyan); box-shadow: 0 0 0 4px rgba(53,200,255,.15); }
+  .card .go {
+    margin-top: 4px; width: 100%; padding: 13px;
     border: none; border-radius: 10px; cursor: pointer;
     background: var(--ml-blue); color: white;
-    font-size: 15px; font-weight: 700; letter-spacing: .04em;
+    font-size: 15px; font-weight: 800; letter-spacing: .04em;
     transition: transform .12s ease, box-shadow .12s ease;
-    box-shadow: 0 6px 24px rgba(30,30,255,.4);
+    box-shadow: 0 6px 24px rgba(30,30,255,.45);
   }
-  .card button:hover { transform: translateY(-1px); box-shadow: 0 10px 32px rgba(30,30,255,.55); }
-  .hints { margin-top: 20px; font-size: 12px; opacity: .55; line-height: 1.7; }
+  .go:hover { transform: translateY(-1px); box-shadow: 0 10px 32px rgba(30,30,255,.6); }
+  .go:disabled { opacity: .6; cursor: wait; }
+  #auth-error {
+    display: none; margin-top: 10px; padding: 9px 12px;
+    border-radius: 9px; font-size: 12.5px; font-weight: 600;
+    background: rgba(255,80,90,.14); color: #ff9aa2;
+    border: 1px solid rgba(255,80,90,.3);
+  }
+  .hints { margin-top: 14px; font-size: 11.5px; opacity: .5; line-height: 1.7; }
 
-  /* ---------- HUD ---------- */
+  /* ================= SELECTOR DE AVATAR ================= */
+  #selector {
+    position: fixed; inset: 0; z-index: 9;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+    background: radial-gradient(circle at 50% 30%, rgba(30,30,255,.28), transparent 55%), rgba(10,10,35,.86);
+    backdrop-filter: blur(8px);
+  }
+  #selector h2 {
+    color: var(--ml-mist); font-size: 21px; letter-spacing: .14em; font-weight: 800;
+    text-shadow: 0 0 24px rgba(30,30,255,.7);
+  }
+  #sel-stage {
+    position: relative; width: min(320px, 80vw); height: min(340px, 44vh);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  #sel-ring {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    width: 190px; height: 56px; border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(53,200,255,.4), rgba(30,30,255,.12) 60%, transparent 70%);
+    box-shadow: 0 0 40px rgba(30,30,255,.4);
+    animation: ring-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes ring-pulse { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
+  #sel-img {
+    position: relative; max-height: 100%; max-width: 100%;
+    filter: drop-shadow(0 18px 26px rgba(10,10,35,.65));
+    animation: sel-bob 3s ease-in-out infinite;
+    transition: opacity .09s ease;
+  }
+  @keyframes sel-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  #sel-name { color: var(--ml-mist); font-size: 24px; font-weight: 900; letter-spacing: .06em; }
+  #sel-desc { color: rgba(244,244,255,.65); font-size: 13.5px; max-width: 300px; text-align: center; min-height: 36px; }
+  #sel-cards { display: flex; gap: 12px; }
+  .sel-card {
+    width: 76px; height: 92px; border-radius: 14px; cursor: pointer;
+    background: rgba(244,244,255,.06);
+    border: 2px solid rgba(244,244,255,.16);
+    display: flex; align-items: flex-end; justify-content: center;
+    overflow: hidden; position: relative;
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  }
+  .sel-card img { height: 82px; pointer-events: none; transform: translateY(6px); }
+  .sel-card:hover { transform: translateY(-6px) scale(1.05); border-color: rgba(53,200,255,.6); }
+  .sel-card.active {
+    border-color: var(--ml-cyan);
+    box-shadow: 0 0 24px rgba(53,200,255,.55), inset 0 0 18px rgba(30,30,255,.25);
+    transform: translateY(-6px) scale(1.08);
+  }
+  #sel-play {
+    padding: 14px 54px; border: none; border-radius: 999px; cursor: pointer;
+    background: var(--ml-blue); color: white;
+    font-size: 17px; font-weight: 900; letter-spacing: .08em;
+    box-shadow: 0 10px 34px rgba(30,30,255,.6);
+    transition: transform .14s ease;
+  }
+  #sel-play:hover { transform: scale(1.05); }
+
+  /* ================= HUD ================= */
   #hud {
     position: fixed; top: 14px; left: 14px; z-index: 5;
     display: none; align-items: center; gap: 10px;
@@ -91,25 +204,38 @@
     display: none; color: var(--ml-mist);
     font-size: 11px; letter-spacing: .18em; font-weight: 700; opacity: .55;
   }
-  #brand .lab { color: var(--ml-blue); font-style: italic; }
+  #brand .lab { color: var(--ml-cyan); font-style: italic; }
 
-  /* ---------- Chat ---------- */
+  /* ================= CHAT ================= */
   #chat-bar {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     z-index: 5; display: none; align-items: center; gap: 8px;
-    width: min(480px, calc(100vw - 32px));
+    width: min(460px, calc(100vw - 32px));
   }
   #chat-input {
-    flex: 1; padding: 11px 16px;
+    flex: 1; padding: 11px 18px;
     border-radius: 999px; border: 1px solid rgba(244,244,255,.22);
     background: rgba(10,10,35,.78); color: var(--ml-mist);
     font-size: 14px; outline: none;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(6px);
   }
-  #chat-input:focus { border-color: var(--ml-blue); box-shadow: 0 0 0 4px rgba(30,30,255,.18); }
+  #chat-input:focus { border-color: var(--ml-cyan); box-shadow: 0 0 0 4px rgba(53,200,255,.14); }
   #chat-send {
-    padding: 11px 18px; border: none; border-radius: 999px; cursor: pointer;
-    background: var(--ml-blue); color: white; font-weight: 700; font-size: 14px;
+    width: 44px; height: 44px; border: none; border-radius: 50%; cursor: pointer;
+    background: var(--ml-blue); color: white; font-size: 17px;
+    box-shadow: 0 4px 16px rgba(30,30,255,.5);
+    transition: transform .12s ease, opacity .2s;
+  }
+  #chat-send:hover { transform: scale(1.08); }
+  #chat-send:disabled { opacity: .45; cursor: default; transform: none; }
+  #chat-toast {
+    position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: none;
+    background: rgba(10,10,35,.9); color: #ffd27d;
+    border: 1px solid rgba(255,210,125,.35);
+    padding: 8px 16px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 700;
+    backdrop-filter: blur(4px);
   }
 </style>
 </head>
@@ -121,26 +247,54 @@
 <div id="brand">MASTER<span class="lab">LAB</span> IA</div>
 
 <div id="chat-bar">
-  <input id="chat-input" type="text" maxlength="120" placeholder="Escribe para hablar con quien tengas cerca… (Enter)" autocomplete="off">
+  <input id="chat-input" type="text" maxlength="120" placeholder="Habla con quien tengas cerca… (Enter)" autocomplete="off">
   <button id="chat-send">💬</button>
 </div>
+<div id="chat-toast"></div>
 
+<!-- ============ PANTALLA DE INICIO ============ -->
 <div id="welcome">
+  <div class="bg"></div>
+  <div class="veil"></div>
+
+  <div class="game-logo">
+    <div class="spark-wrap">
+      <svg viewBox="0 0 64 64" fill="#35c8ff" width="100%" height="100%">
+        <path d="M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z"/>
+        <circle cx="52" cy="14" r="3.2"/>
+      </svg>
+    </div>
+    <div class="campus">Campus</div>
+    <h1>MASTER<span class="lab">LAB</span><span class="ia">IA</span></h1>
+  </div>
+
   <div class="card">
-    <svg class="spark" viewBox="0 0 64 64" fill="currentColor">
-      <path d="M32 4c2.6 9.4 8.6 15.4 18 18-9.4 2.6-15.4 8.6-18 18-2.6-9.4-8.6-15.4-18-18 9.4-2.6 15.4-8.6 18-18z"/>
-      <circle cx="52" cy="14" r="3.2"/>
-    </svg>
-    <h1>CAMPUS MASTER<span class="lab">LAB</span> IA</h1>
-    <p class="sub">Fase 2 — Plaza Central multijugador</p>
-    <input id="player-name" type="text" maxlength="14" placeholder="Tu nombre de científic@" autocomplete="off">
-    <button id="enter-btn">Entrar al laboratorio ⚡</button>
+    <div class="tabs">
+      <button id="tab-login" class="active">Iniciar sesión</button>
+      <button id="tab-register">Crear cuenta</button>
+    </div>
+    <input id="auth-user" type="text" maxlength="14" placeholder="Tu nombre de científic@" autocomplete="username">
+    <input id="auth-pass" type="password" maxlength="40" placeholder="Contraseña" autocomplete="current-password">
+    <button id="auth-go" class="go">Entrar al laboratorio ⚡</button>
+    <div id="auth-error"></div>
     <div class="hints">
-      🖱️ / 👆 Toca el piso para caminar &nbsp;·&nbsp; ⌨️ WASD o flechas<br>
-      💬 Chat de proximidad: solo te leen los que están cerca<br>
-      🪙 Recoge las monedas Spark de la plaza
+      Tu progreso (monedas y avatar) se guarda con tu cuenta.<br>
+      🖱️/👆 caminar · ⌨️ WASD · 💬 chat de proximidad · 🪙 monedas Spark
     </div>
   </div>
+</div>
+
+<!-- ============ SELECTOR DE AVATAR ============ -->
+<div id="selector">
+  <h2>ELIGE TU CIENTÍFIC@</h2>
+  <div id="sel-stage">
+    <div id="sel-ring"></div>
+    <img id="sel-img" src="assets/kai-down.png" alt="avatar">
+  </div>
+  <div id="sel-name">Kai</div>
+  <div id="sel-desc"></div>
+  <div id="sel-cards"></div>
+  <button id="sel-play">¡JUGAR! ⚡</button>
 </div>
 
 <script src="phaser.min.js"></script>
@@ -149,15 +303,14 @@
 "use strict";
 
 /* ============================================================
-   Campus Master Lab IA — Fase 2: multijugador
-   Cliente Phaser + Colyseus. Si el servidor no responde,
-   cae a modo offline (single-player) automáticamente.
+   Campus Master Lab IA — cliente
+   Login/registro → selector de avatar → Plaza multijugador.
+   Sin servidor: modo offline automático.
    ============================================================ */
 
 const WORLD_W = 1920;
 const WORLD_H = 1085;
 
-// Área caminable: elipse de la plaza menos la fuente (espejo del servidor).
 const FLOOR_CX = 950, FLOOR_CY = 610, FLOOR_RX = 590, FLOOR_RY = 370;
 const FOUNTAIN = { x: 945, y: 575, r: 185 };
 
@@ -177,56 +330,80 @@ function randomFloorPoint() {
   return { x: 960, y: 880 };
 }
 
-const SPEED = 340;             // px/s
+const SPEED = 340;
 const PICKUP_DIST = 55;
-const CHAT_RADIUS = 360;       // px de proximidad para leer el chat
-const MOVE_SEND_MS = 60;       // frecuencia de envío de posición
+const CHAT_RADIUS = 360;
+const MOVE_SEND_MS = 60;
 const OFFLINE_COINS = 6;
+const CHAT_COOLDOWN_UI_MS = 1300;
+
+const AVATARS = [
+  { id: "kai",  name: "Kai",  desc: "Curioso incorregible. Su bata tiene quemaduras de experimentos que 'casi salen bien'." },
+  { id: "vera", name: "Vera", desc: "La mente brillante del grupo. Su cabello guarda al menos tres lápices perdidos." },
+  { id: "tato", name: "Tato", desc: "Optimista profesional. Dice que sus audífonos le ayudan a 'escuchar los datos'." },
+  { id: "zoe",  name: "Zoe",  desc: "Ingeniera estrella. Su dron la sigue a todas partes desde que lo rescató." },
+];
 
 let playerName = "Científic@";
+let myAvatar = "kai";
+let room = null;
+let online = false;
 
 function depthScaleFor(y) {
   const t = (y - (FLOOR_CY - FLOOR_RY)) / (FLOOR_RY * 2);
   return 0.68 + Math.max(0, Math.min(1, t)) * 0.42;
 }
 
+/* ==================== ESCENA ==================== */
 class PlazaScene extends Phaser.Scene {
   constructor() { super("plaza"); }
 
   preload() {
     this.load.image("plaza", "assets/plaza.jpg");
-    this.load.image("player-down", "assets/player-down.png");
-    this.load.image("player-up", "assets/player-up.png");
-    this.load.image("player-side", "assets/player-side.png");
     this.load.image("coin", "assets/coin.png");
+    for (const a of AVATARS) {
+      this.load.image(`${a.id}-down`, `assets/${a.id}-down.png`);
+      this.load.image(`${a.id}-up`, `assets/${a.id}-up.png`);
+      this.load.image(`${a.id}-side`, `assets/${a.id}-side.png`);
+    }
   }
 
   create() {
     this.add.image(0, 0, "plaza").setOrigin(0);
 
-    // --- Jugador local ---
     const spawn = randomFloorPoint();
-    this.me = this.makeAvatar(spawn.x, spawn.y, playerName, true);
+    this.me = this.makeAvatar(spawn.x, spawn.y, playerName, myAvatar, true);
     this.target = null;
     this.moving = false;
-    this.bobT = 0;
-    this.idleT = 0;
-    this.leanDir = 0;
     this.lastSent = 0;
     this.lastSentState = "";
 
-    // --- Multijugador ---
-    this.room = null;
-    this.online = false;
-    this.remotes = new Map();   // sessionId -> avatar
-    this.coinSprites = new Map(); // coinId -> sprite
-    this.score = 0;
-    this.connect();
-
-    // --- Offline fallback (se activa solo si el server no responde) ---
+    this.remotes = new Map();
+    this.coinSprites = new Map();
     this.offlineCoins = [];
+    this.score = 0;
 
-    // --- Input ---
+    if (online && room) {
+      const meState = room.state.players.get(room.sessionId);
+      if (meState) {
+        this.placeAvatar(this.me, meState.x, meState.y);
+        this.me.avatarId = meState.avatar || myAvatar;
+      }
+      room.onMessage("chat", ({ id, text }) => this.onChat(id, text));
+      room.onMessage("chat-blocked", ({ reason }) => showToast(reason));
+      room.onMessage("collected", ({ id }) => {
+        const s = this.coinSprites.get(id);
+        if (s) { this.collectFx(s); this.coinSprites.delete(id); }
+      });
+      room.onLeave(() => {
+        online = false;
+        document.getElementById("online-badge").classList.add("offline");
+        document.getElementById("online-text").textContent = "Desconectado";
+      });
+    } else {
+      for (let i = 0; i < OFFLINE_COINS; i++) this.spawnOfflineCoin();
+    }
+
     this.input.on("pointerdown", (p) => {
       if (document.activeElement === chatInput) chatInput.blur();
       const wp = this.cameras.main.getWorldPoint(p.x, p.y);
@@ -237,54 +414,17 @@ class PlazaScene extends Phaser.Scene {
     });
     this.keys = this.input.keyboard.addKeys("W,A,S,D,UP,LEFT,DOWN,RIGHT");
 
-    window.__plaza = this; // hook para pruebas automatizadas
+    window.__plaza = this;
 
-    // --- Cámara ---
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.fitCamera();
     this.scale.on("resize", () => this.fitCamera());
   }
 
-  // ---------- Conexión ----------
-  async connect() {
-    const badge = document.getElementById("online-badge");
-    const btext = document.getElementById("online-text");
-    try {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const client = new Colyseus.Client(`${proto}://${location.hostname}:2567`);
-      this.room = await client.joinOrCreate("plaza", { name: playerName });
-      this.online = true;
-      badge.classList.remove("offline");
-
-      // Posición inicial que nos asignó el servidor
-      const meState = this.room.state.players.get(this.room.sessionId);
-      if (meState) this.placeAvatar(this.me, meState.x, meState.y);
-
-      this.room.onMessage("chat", ({ id, text }) => this.onChat(id, text));
-      this.room.onMessage("collected", ({ id, by }) => {
-        const s = this.coinSprites.get(id);
-        if (s) {
-          this.collectFx(s, by === this.room.sessionId);
-          this.coinSprites.delete(id);
-        }
-      });
-      this.room.onLeave(() => {
-        this.online = false;
-        badge.classList.add("offline");
-        btext.textContent = "Desconectado";
-      });
-    } catch (e) {
-      this.online = false;
-      badge.classList.add("offline");
-      btext.textContent = "Modo offline";
-      for (let i = 0; i < OFFLINE_COINS; i++) this.spawnOfflineCoin();
-    }
-  }
-
-  // ---------- Avatares ----------
-  makeAvatar(x, y, name, isMe) {
+  /* ---------- Avatares ---------- */
+  makeAvatar(x, y, name, avatarId, isMe) {
     const shadow = this.add.ellipse(x, y - 4, 92, 30, 0x0A0A23, 0.32);
-    const sprite = this.add.image(x, y, "player-down").setOrigin(0.5, 0.94);
+    const sprite = this.add.image(x, y, `${avatarId}-down`).setOrigin(0.5, 0.94);
     const tag = this.add.text(x, y, name, {
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
       fontSize: "22px", fontStyle: "bold",
@@ -293,8 +433,8 @@ class PlazaScene extends Phaser.Scene {
     }).setOrigin(0.5, 1);
     return {
       sprite, shadow, tag,
-      x, y,            // posición lógica (pies)
-      tx: x, ty: y,    // objetivo de interpolación (remotos)
+      x, y, tx: x, ty: y,
+      avatarId,
       flip: false, moving: false, dir: "down",
       bobT: 0, idleT: Math.random() * 10,
       bubble: null, bubbleTimer: null,
@@ -310,9 +450,9 @@ class PlazaScene extends Phaser.Scene {
 
   renderAvatar(a, dt) {
     const ds = depthScaleFor(a.y);
-    // Vista según dirección: frente / espalda / perfil (flip para izquierda)
-    const tex = a.dir === "up" ? "player-up" : a.dir === "side" ? "player-side" : "player-down";
-    if (a.sprite.texture.key !== tex) a.sprite.setTexture(tex);
+    const view = a.dir === "up" ? "up" : a.dir === "side" ? "side" : "down";
+    const tex = `${a.avatarId}-${view}`;
+    if (a.sprite.texture.key !== tex && this.textures.exists(tex)) a.sprite.setTexture(tex);
     const flip = a.dir === "side" ? a.flip : false;
     if (a.moving) {
       a.bobT += dt * 0.022;
@@ -331,7 +471,7 @@ class PlazaScene extends Phaser.Scene {
       a.shadow.setScale(1);
       a.bobT = 0;
     }
-    a.sprite.flipX = false; // el flip va vía scaleX
+    a.sprite.flipX = false;
     a.sprite.x = a.x;
     a.shadow.setPosition(a.x, a.y - 4);
     a.sprite.setDepth(a.y);
@@ -339,54 +479,69 @@ class PlazaScene extends Phaser.Scene {
     a.tag.setDepth(a.y + 1);
     a.tag.setPosition(a.x, a.sprite.y - a.sprite.displayHeight - 6);
     if (a.bubble) {
-      a.bubble.setDepth(a.y + 2);
-      a.bubble.setPosition(a.x, a.tag.y - 30);
+      a.bubble.setDepth(100000);
+      a.bubble.setPosition(a.x, a.tag.y - 28);
     }
   }
 
-  // ---------- Chat ----------
+  /* ---------- Chat: burbuja integrada ---------- */
   onChat(id, text) {
-    const isMe = this.room && id === this.room.sessionId;
-    const a = isMe ? this.me : this.remotes.get(id);
+    const isMe = room && id === room.sessionId;
+    const a = isMe || !room ? this.me : this.remotes.get(id);
     if (!a) return;
-    // Proximidad: solo se lee a quien está cerca
-    if (!isMe && Math.hypot(a.x - this.me.x, a.y - this.me.y) > CHAT_RADIUS) return;
+    if (!isMe && room && Math.hypot(a.x - this.me.x, a.y - this.me.y) > CHAT_RADIUS) return;
 
     if (a.bubble) { a.bubble.destroy(); a.bubble = null; }
     if (a.bubbleTimer) a.bubbleTimer.remove();
 
-    const bubble = this.add.text(a.x, a.y - 200, text, {
+    // Texto con salto de línea controlado (nunca se descuadra)
+    const label = this.add.text(0, 0, text, {
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
-      fontSize: "19px",
+      fontSize: "18px",
       color: "#0A0A23",
-      backgroundColor: "#F4F4FF",
-      padding: { x: 12, y: 7 },
-      wordWrap: { width: 300 },
+      wordWrap: { width: 250, useAdvancedWrap: true },
       align: "center",
-    }).setOrigin(0.5, 1);
+    }).setOrigin(0.5, 0.5);
+
+    const padX = 14, padY = 10, tail = 9;
+    const w = Math.min(280, label.width + padX * 2);
+    const h = label.height + padY * 2;
+
+    const g = this.add.graphics();
+    g.fillStyle(0xF4F4FF, 0.97);
+    g.lineStyle(2, 0x1E1EFF, 0.28);
+    g.fillRoundedRect(-w / 2, -h - tail, w, h, 12);
+    g.strokeRoundedRect(-w / 2, -h - tail, w, h, 12);
+    g.fillTriangle(-7, -tail + 1, 7, -tail + 1, 0, 2);
+
+    label.setPosition(0, -tail - h / 2);
+
+    const bubble = this.add.container(a.x, 0, [g, label]);
+    bubble.setDepth(100000);
+    bubble.setScale(0.6).setAlpha(0);
+    this.tweens.add({ targets: bubble, scale: 1, alpha: 1, duration: 170, ease: "back.out" });
+
     a.bubble = bubble;
-    a.bubbleTimer = this.time.delayedCall(4200, () => {
-      if (a.bubble === bubble) { bubble.destroy(); a.bubble = null; }
+    const life = Math.min(7000, 2800 + text.length * 40);
+    a.bubbleTimer = this.time.delayedCall(life, () => {
+      if (a.bubble === bubble) {
+        this.tweens.add({
+          targets: bubble, alpha: 0, y: bubble.y - 14, duration: 240,
+          onComplete: () => bubble.destroy(),
+        });
+        a.bubble = null;
+      }
     });
   }
 
   sendChat(text) {
     const t = text.trim();
     if (!t) return;
-    if (this.online && this.room) {
-      this.room.send("chat", { text: t });
-    } else {
-      this.onChatLocal(t);
-    }
+    if (online && room) room.send("chat", { text: t });
+    else this.onChat("__yo__", t);
   }
 
-  onChatLocal(text) {
-    // Burbujita en modo offline
-    if (this.room) return;
-    this.onChat("__me__", text);
-  }
-
-  // ---------- Monedas ----------
+  /* ---------- Monedas ---------- */
   spawnOfflineCoin() {
     const { x, y } = randomFloorPoint();
     const s = this.add.image(x, y, "coin").setScale(0.85);
@@ -403,7 +558,7 @@ class PlazaScene extends Phaser.Scene {
     return s;
   }
 
-  collectFx(coinSprite, byMe) {
+  collectFx(coinSprite) {
     const plus = this.add.text(coinSprite.x, coinSprite.baseY - 40, "+1", {
       fontSize: "30px", fontStyle: "bold", color: "#FFD84D",
       stroke: "#0A0A23", strokeThickness: 6,
@@ -416,20 +571,14 @@ class PlazaScene extends Phaser.Scene {
       targets: coinSprite, y: coinSprite.baseY - 40, alpha: 0, scale: 1.1, duration: 260,
       onComplete: () => coinSprite.destroy(),
     });
-    if (byMe) {
-      this.score++;
-      document.getElementById("coin-count").textContent = this.score;
-    }
   }
 
   marker(x, y) {
-    // Pulso inicial
     const c = this.add.circle(x, y, 16).setStrokeStyle(3, 0x1E1EFF, 1).setDepth(99998);
     this.tweens.add({
       targets: c, scale: 0.2, alpha: 0, duration: 420,
       onComplete: () => c.destroy(),
     });
-    // Anillo persistente que respira hasta llegar al destino
     if (this.destMarker) { this.destMarker.destroy(); this.destMarker = null; }
     const ring = this.add.ellipse(x, y, 34, 16).setStrokeStyle(2.5, 0x1E1EFF, 0.9).setDepth(2);
     this.destMarker = ring;
@@ -451,11 +600,10 @@ class PlazaScene extends Phaser.Scene {
     cam.centerOn(WORLD_W / 2, WORLD_H / 2);
   }
 
-  // ---------- Loop principal ----------
+  /* ---------- Loop ---------- */
   update(time, dtMs) {
     const dt = dtMs / 1000;
 
-    // 1) Movimiento local (teclado manda sobre el click)
     let vx = 0, vy = 0;
     const typing = document.activeElement === chatInput;
     if (!typing) {
@@ -489,11 +637,10 @@ class PlazaScene extends Phaser.Scene {
     this.me.moving = this.moving;
     this.renderAvatar(this.me, dtMs);
 
-    // 2) Enviar posición al servidor (throttle + solo si cambió)
-    if (this.online && this.room && time - this.lastSent > MOVE_SEND_MS) {
+    if (online && room && time - this.lastSent > MOVE_SEND_MS) {
       const stateStr = `${this.me.x | 0},${this.me.y | 0},${this.me.flip},${this.moving},${this.me.dir}`;
       if (stateStr !== this.lastSentState) {
-        this.room.send("move", {
+        room.send("move", {
           x: this.me.x, y: this.me.y,
           flip: this.me.flip, moving: this.moving, dir: this.me.dir,
         });
@@ -502,33 +649,32 @@ class PlazaScene extends Phaser.Scene {
       }
     }
 
-    // 3) Sincronizar jugadores remotos (diff del estado)
-    if (this.online && this.room) {
+    if (online && room) {
       const seen = new Set();
-      this.room.state.players.forEach((p, id) => {
-        if (id === this.room.sessionId) {
-          // HUD con score validado por el servidor
+      room.state.players.forEach((p, id) => {
+        if (id === room.sessionId) {
           if (p.score !== this.score) {
             this.score = p.score;
             document.getElementById("coin-count").textContent = this.score;
           }
+          if (p.avatar && p.avatar !== this.me.avatarId) this.me.avatarId = p.avatar;
           return;
         }
         seen.add(id);
         let a = this.remotes.get(id);
         if (!a) {
-          a = this.makeAvatar(p.x, p.y, p.name, false);
+          a = this.makeAvatar(p.x, p.y, p.name, p.avatar || "kai", false);
           this.remotes.set(id, a);
         }
         a.tx = p.x; a.ty = p.y;
         a.flip = !!p.flip;
         a.moving = !!p.moving;
         a.dir = p.dir || "down";
+        if (p.avatar && p.avatar !== a.avatarId) a.avatarId = p.avatar;
       });
       for (const [id, a] of this.remotes) {
         if (!seen.has(id)) { this.destroyAvatar(a); this.remotes.delete(id); }
       }
-      // Interpolación suave hacia la última posición conocida
       for (const a of this.remotes.values()) {
         const f = Math.min(1, dt * 12);
         a.x += (a.tx - a.x) * f;
@@ -538,9 +684,8 @@ class PlazaScene extends Phaser.Scene {
         this.renderAvatar(a, dtMs);
       }
 
-      // 4) Monedas del servidor (diff)
       const seenCoins = new Set();
-      this.room.state.coins.forEach((c, id) => {
+      room.state.coins.forEach((c, id) => {
         seenCoins.add(id);
         if (!this.coinSprites.has(id)) {
           this.coinSprites.set(id, this.makeCoinSprite(c.x, c.y));
@@ -549,30 +694,27 @@ class PlazaScene extends Phaser.Scene {
       for (const [id, s] of this.coinSprites) {
         if (!seenCoins.has(id)) { s.destroy(); this.coinSprites.delete(id); }
       }
-      // Animación + intento de recolección
       for (const [id, s] of this.coinSprites) {
         s.y = s.baseY + Math.sin(time * 0.004 + s.phase) * 6;
         if (Math.hypot(s.x - this.me.x, s.baseY - this.me.y) < PICKUP_DIST) {
-          this.room.send("collect", { id });
+          room.send("collect", { id });
         }
       }
+
+      const n = room.state.players.size;
+      document.getElementById("online-text").textContent =
+        n === 1 ? "1 conectado" : `${n} conectados`;
     } else {
-      // Modo offline: monedas locales
       for (const s of [...this.offlineCoins]) {
         s.y = s.baseY + Math.sin(time * 0.004 + s.phase) * 6;
         if (Math.hypot(s.x - this.me.x, s.baseY - this.me.y) < PICKUP_DIST) {
           this.offlineCoins = this.offlineCoins.filter((c) => c !== s);
-          this.collectFx(s, true);
+          this.collectFx(s);
+          this.score++;
+          document.getElementById("coin-count").textContent = this.score;
           this.time.delayedCall(1200, () => this.spawnOfflineCoin());
         }
       }
-    }
-
-    // 5) Contador de conectados
-    if (this.online && this.room) {
-      const n = this.room.state.players.size;
-      document.getElementById("online-text").textContent =
-        n === 1 ? "1 conectado" : `${n} conectados`;
     }
   }
 
@@ -583,11 +725,9 @@ class PlazaScene extends Phaser.Scene {
     if (isWalkable(nx, this.me.y)) { this.me.x = nx; movedAny = true; }
     if (isWalkable(this.me.x, ny)) { this.me.y = ny; movedAny = true; }
 
-    // Si la fuente bloquea el camino, deslizarse tangencialmente a su alrededor
     if (!movedAny && this.target) {
       const fx = this.me.x - FOUNTAIN.x, fy = this.me.y - FOUNTAIN.y;
       const flen = Math.hypot(fx, fy) || 1;
-      // dos tangentes posibles; elegir la que acerque al objetivo
       const step = Math.hypot(dx, dy);
       const t1 = { x: -fy / flen * step, y: fx / flen * step };
       const t2 = { x: fy / flen * step, y: -fx / flen * step };
@@ -601,7 +741,6 @@ class PlazaScene extends Phaser.Scene {
       }
     }
 
-    // Dirección de la vista según el vector dominante
     if (movedAny && (dx || dy)) {
       if (Math.abs(dx) > Math.abs(dy) * 0.9) {
         this.me.dir = "side";
@@ -615,25 +754,151 @@ class PlazaScene extends Phaser.Scene {
   }
 }
 
-// ---------- Arranque ----------
+/* ==================== FLUJO DE PANTALLAS ==================== */
 const chatInput = document.getElementById("chat-input");
-let scene = null;
+const chatSend = document.getElementById("chat-send");
+let isRegister = false;
 
-document.getElementById("enter-btn").addEventListener("click", start);
-document.getElementById("player-name").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") start();
+document.getElementById("tab-login").addEventListener("click", () => setTab(false));
+document.getElementById("tab-register").addEventListener("click", () => setTab(true));
+function setTab(reg) {
+  isRegister = reg;
+  document.getElementById("tab-login").classList.toggle("active", !reg);
+  document.getElementById("tab-register").classList.toggle("active", reg);
+  document.getElementById("auth-go").textContent =
+    reg ? "Crear cuenta y entrar 🧪" : "Entrar al laboratorio ⚡";
+}
+
+const savedUser = localStorage.getItem("ml-user");
+if (savedUser) document.getElementById("auth-user").value = savedUser;
+
+document.getElementById("auth-go").addEventListener("click", doAuth);
+document.getElementById("auth-pass").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") doAuth();
 });
 
-function start() {
-  const v = document.getElementById("player-name").value.trim();
-  if (v) playerName = v;
+function showAuthError(msg) {
+  const el = document.getElementById("auth-error");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+async function doAuth() {
+  const user = document.getElementById("auth-user").value.trim();
+  const pass = document.getElementById("auth-pass").value;
+  const btn = document.getElementById("auth-go");
+  document.getElementById("auth-error").style.display = "none";
+
+  if (user.length < 3) return showAuthError("El nombre debe tener al menos 3 caracteres.");
+  if (pass.length < 4) return showAuthError("La contraseña debe tener al menos 4 caracteres.");
+
+  btn.disabled = true;
+  btn.textContent = "Conectando…";
+  try {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const client = new Colyseus.Client(`${proto}://${location.hostname}:2567`);
+    room = await client.joinOrCreate("plaza", {
+      username: user, password: pass, register: isRegister,
+    });
+    online = true;
+    playerName = user;
+    localStorage.setItem("ml-user", user);
+    // Esperar la primera sincronización de estado para conocer el avatar guardado
+    if (!room.state.players || !room.state.players.get(room.sessionId)) {
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, 1500);
+        room.onStateChange.once(() => { clearTimeout(t); resolve(); });
+      });
+    }
+    enterSelector();
+  } catch (e) {
+    online = false;
+    room = null;
+    const msg = (e && e.message) || "";
+    if (/^(seat reservation|failed to connect|WebSocket)/i.test(msg) || !msg) {
+      // Servidor inaccesible → ofrecer modo offline
+      showAuthError("No hay conexión con el servidor. Entrando en modo offline…");
+      playerName = user || "Científic@";
+      setTimeout(enterSelector, 900);
+    } else {
+      showAuthError(msg);
+    }
+  }
+  btn.disabled = false;
+  setTab(isRegister);
+}
+
+/* ---------- Selector de avatar ---------- */
+const selViews = ["down", "side", "up"];
+let selIndex = 0;
+let selViewIdx = 0;
+let selCycle = null;
+
+function enterSelector() {
   document.getElementById("welcome").style.display = "none";
+  const sel = document.getElementById("selector");
+  sel.style.display = "flex";
+
+  // Avatar guardado en la cuenta
+  if (online && room) {
+    const meState = room.state.players.get(room.sessionId);
+    if (meState && meState.avatar) {
+      selIndex = Math.max(0, AVATARS.findIndex((a) => a.id === meState.avatar));
+    }
+  }
+
+  const cards = document.getElementById("sel-cards");
+  cards.innerHTML = "";
+  AVATARS.forEach((a, i) => {
+    const card = document.createElement("div");
+    card.className = "sel-card" + (i === selIndex ? " active" : "");
+    card.innerHTML = `<img src="assets/${a.id}-down.png" alt="${a.name}">`;
+    card.addEventListener("click", () => { selIndex = i; selViewIdx = 0; refreshSelector(); });
+    cards.appendChild(card);
+  });
+  refreshSelector();
+
+  clearInterval(selCycle);
+  selCycle = setInterval(() => {
+    selViewIdx = (selViewIdx + 1) % selViews.length;
+    const img = document.getElementById("sel-img");
+    img.style.opacity = 0;
+    setTimeout(() => {
+      img.src = `assets/${AVATARS[selIndex].id}-${selViews[selViewIdx]}.png`;
+      img.style.opacity = 1;
+    }, 90);
+  }, 1400);
+}
+
+function refreshSelector() {
+  const a = AVATARS[selIndex];
+  document.getElementById("sel-img").src = `assets/${a.id}-${selViews[selViewIdx]}.png`;
+  document.getElementById("sel-name").textContent = a.name;
+  document.getElementById("sel-desc").textContent = a.desc;
+  document.querySelectorAll(".sel-card").forEach((c, i) =>
+    c.classList.toggle("active", i === selIndex));
+}
+
+document.getElementById("sel-play").addEventListener("click", () => {
+  clearInterval(selCycle);
+  myAvatar = AVATARS[selIndex].id;
+  if (online && room) room.send("avatar", { avatar: myAvatar });
+  document.getElementById("selector").style.display = "none";
+  startGame();
+});
+
+/* ---------- Juego ---------- */
+function startGame() {
   document.getElementById("hud").style.display = "flex";
   document.getElementById("brand").style.display = "block";
   document.getElementById("online-badge").style.display = "flex";
   document.getElementById("chat-bar").style.display = "flex";
+  if (!online) {
+    document.getElementById("online-badge").classList.add("offline");
+    document.getElementById("online-text").textContent = "Modo offline";
+  }
 
-  const game = new Phaser.Game({
+  new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game-container",
     backgroundColor: "#0A0A23",
@@ -643,30 +908,47 @@ function start() {
     },
     scene: PlazaScene,
   });
-  game.events.on("ready", () => { scene = game.scene.getScene("plaza"); });
-
-  // Chat: Enter dentro del input envía; Enter fuera enfoca el chat
-  chatInput.addEventListener("keydown", (e) => {
-    e.stopPropagation();
-    if (e.key === "Enter") {
-      const s = window.__plaza;
-      if (s) s.sendChat(chatInput.value);
-      chatInput.value = "";
-      chatInput.blur();
-    }
-    if (e.key === "Escape") chatInput.blur();
-  });
-  document.getElementById("chat-send").addEventListener("click", () => {
-    const s = window.__plaza;
-    if (s) s.sendChat(chatInput.value);
-    chatInput.value = "";
-  });
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && document.activeElement !== chatInput) {
-      chatInput.focus();
-    }
-  });
 }
+
+/* ---------- Chat UI: envío con cooldown anti-spam ---------- */
+let lastChatSent = 0;
+let toastTimer = null;
+
+function showToast(msg) {
+  const t = document.getElementById("chat-toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = "none"; }, 2600);
+}
+
+function submitChat() {
+  const now = Date.now();
+  if (now - lastChatSent < CHAT_COOLDOWN_UI_MS) {
+    showToast("Espera un momento antes de enviar otro mensaje ✋");
+    return;
+  }
+  const s = window.__plaza;
+  if (!s || !chatInput.value.trim()) return;
+  s.sendChat(chatInput.value);
+  chatInput.value = "";
+  lastChatSent = now;
+  chatSend.disabled = true;
+  setTimeout(() => { chatSend.disabled = false; }, CHAT_COOLDOWN_UI_MS);
+}
+
+chatInput.addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Enter") { submitChat(); chatInput.blur(); }
+  if (e.key === "Escape") chatInput.blur();
+});
+chatSend.addEventListener("click", submitChat);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && document.activeElement !== chatInput &&
+      document.getElementById("chat-bar").style.display === "flex") {
+    chatInput.focus();
+  }
+});
 </script>
 </body>
 </html>
