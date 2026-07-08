@@ -86,7 +86,7 @@ defineTypes(SalaState, {
   coins: { map: Coin },
 });
 
-const COIN_COUNT = 8;
+const COIN_COUNT = 3;
 const PICKUP_DIST = 70;
 const CHAT_MAX_LEN = 120;
 const CHAT_WINDOW_MS = 5000;
@@ -236,9 +236,9 @@ class SalaRoom extends Room {
       let ticks = 0;
       const iv = this.clock.setInterval(() => {
         ticks++;
-        if (this.state.coins.size < 45) { this.spawnCoin(); this.spawnCoin(); }
-        if (ticks >= 24) { iv.clear(); this.rainActive = false; }
-      }, 500);
+        if (this.state.coins.size < 18) this.spawnCoin();
+        if (ticks >= 16) { iv.clear(); this.rainActive = false; }
+      }, 700);
     });
 
     // ============ ⚡ QUIZ SPARK ============
@@ -257,7 +257,7 @@ class SalaRoom extends Room {
           const zone = (p.x >= FLOOR_CX ? 1 : 0) + (p.y >= FLOOR_CY ? 2 : 0);
           if (zone === this.quiz.correct) {
             winners.push(p.name);
-            give(p, c.auth?.key, 10);
+            give(p, c.auth?.key, 3);
           }
         });
         this.broadcast("quiz-end", { correct: this.quiz.correct, winners });
@@ -292,7 +292,7 @@ class SalaRoom extends Room {
           eachPlayer((p, c) => {
             if (this.simon.alive.has(c.sessionId)) {
               winners.push(p.name);
-              give(p, c.auth?.key, 30);
+              give(p, c.auth?.key, 5);
             }
           });
           this.broadcast("simon-end", { winners });
@@ -340,7 +340,7 @@ class SalaRoom extends Room {
           eachPlayer((p, c) => {
             if (this.hot.alive.has(c.sessionId)) {
               winners.push(p.name);
-              give(p, c.auth?.key, 40);
+              give(p, c.auth?.key, 5);
             }
           });
           this.broadcast("hot-end", { winners });
@@ -363,7 +363,7 @@ class SalaRoom extends Room {
       if (!isAdmin(client) || this.guess) return;
       const img = String(data?.img || "").trim();
       const answer = String(data?.answer || "").trim().slice(0, 60);
-      const prize = Math.max(1, Math.min(200, Number(data?.prize) || 50));
+      const prize = Math.max(1, Math.min(20, Number(data?.prize) || 5));
       if (!/^https:\/\//.test(img) || answer.length < 2) return;
       this.guess = { answer: normalize(answer), prize };
       this.broadcast("guess-start", { img, seconds: 60, prize });
@@ -377,7 +377,7 @@ class SalaRoom extends Room {
     this.onMessage("admin:hunt", (client, data) => {
       if (!isAdmin(client)) return;
       const area = ROOM_IDS.includes(data?.area) ? data.area : null;
-      const prize = Math.max(1, Math.min(500, Number(data?.prize) || 100));
+      const prize = Math.max(1, Math.min(25, Number(data?.prize) || 10));
       if (!area || hunt.active) return;
       const walk = makeIsWalkable(area === "plaza");
       const spot = makeRandomFloorPoint(walk)();
@@ -510,7 +510,7 @@ class SalaRoom extends Room {
       const u = users[client.auth?.key];
       if (u) { u.coins = p.score; saveUsers(); }
       this.broadcast("collected", { id: data.id, by: client.sessionId });
-      this.clock.setTimeout(() => this.spawnCoin(), 1500);
+      this.clock.setTimeout(() => this.spawnCoin(), 30000 + Math.random() * 45000);
     });
 
     this.onMessage("chat", (client, data) => {

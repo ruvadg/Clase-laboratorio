@@ -503,7 +503,7 @@
     <div class="sec">
       <h4>🔎 BÚSQUEDA DEL TESORO — esconde la Chispa Dorada ✦</h4>
       <div id="hunt-rooms"></div>
-      <input id="hunt-prize" type="number" min="1" max="500" value="100" placeholder="Premio en Master Coins">
+      <input id="hunt-prize" type="number" min="1" max="25" value="10" placeholder="Premio en Master Coins">
       <div class="row">
         <button id="hunt-go" class="act gold">Esconder Chispa ✦</button>
         <button id="hunt-cancel" class="act ghost">Cancelar búsqueda</button>
@@ -531,7 +531,7 @@
       <input id="gs-img" type="text" placeholder="🎨 Adivina: URL https de la imagen…" style="margin-top:10px">
       <div class="qrow">
         <input id="gs-answer" type="text" maxlength="60" placeholder="Respuesta secreta">
-        <input id="gs-prize" type="number" min="1" max="200" value="50" placeholder="Premio">
+        <input id="gs-prize" type="number" min="1" max="20" value="5" placeholder="Premio">
       </div>
       <div class="row"><button id="gs-go" class="act blue">🎨 Lanzar Adivina (60s)</button></div>
     </div>
@@ -794,7 +794,7 @@ class PlazaScene extends Phaser.Scene {
         this.clearQuizZones();
         const letters = ["A", "B", "C", "D"];
         showGameBanner("⚡ RESULTADO", `Respuesta correcta: <b>${letters[correct]}</b><br>` +
-          (winners.length ? `🏆 +10 Master Coins: ${winners.join(", ")}` : "Nadie acertó esta vez 😅"), 6);
+          (winners.length ? `🏆 +3 Master Coins: ${winners.join(", ")}` : "Nadie acertó esta vez 😅"), 6);
       });
       room.onMessage("simon", ({ type, seconds, round }) => {
         const names = { dance: "💃 ¡BAILA!", laugh: "😂 ¡RÍE!", wave: "👋 ¡SALUDA!", heart: "❤️ ¡CORAZÓN!", party: "🎉 ¡FIESTA!" };
@@ -806,7 +806,7 @@ class PlazaScene extends Phaser.Scene {
       });
       room.onMessage("simon-end", ({ winners }) => {
         showGameBanner("🤖 ROBI DICE — FINAL", winners.length
-          ? `🏆 +30 Master Coins: <b>${winners.join(", ")}</b>` : "Robi ganó esta vez 🤖", 7);
+          ? `🏆 +5 Master Coins: <b>${winners.join(", ")}</b>` : "Robi ganó esta vez 🤖", 7);
       });
       room.onMessage("hot-round", ({ zones, seconds, round }) => {
         this.showHotZones(zones);
@@ -820,7 +820,7 @@ class PlazaScene extends Phaser.Scene {
       room.onMessage("hot-end", ({ winners }) => {
         this.clearHotZones();
         showGameBanner("🔥 PISO CALIENTE — FINAL", winners.length
-          ? `🏆 +40 Master Coins: <b>${winners.join(", ")}</b>` : "El piso ganó 🔥", 7);
+          ? `🏆 +5 Master Coins: <b>${winners.join(", ")}</b>` : "El piso ganó 🔥", 7);
       });
       room.onMessage("guess-start", ({ img, seconds, prize }) => {
         document.getElementById("guess-img").src = img;
@@ -1672,7 +1672,7 @@ function setupAdminPanel() {
   document.getElementById("admin-close").onclick = () =>
     document.getElementById("admin-panel").style.display = "none";
   document.getElementById("hunt-go").onclick = () => {
-    const prize = Number(document.getElementById("hunt-prize").value) || 100;
+    const prize = Number(document.getElementById("hunt-prize").value) || 10;
     room.send("admin:hunt", { area: huntArea, prize });
     document.getElementById("admin-panel").style.display = "none";
   };
@@ -1700,7 +1700,7 @@ function setupAdminPanel() {
   document.getElementById("gs-go").onclick = () => {
     const img = document.getElementById("gs-img").value.trim();
     const answer = document.getElementById("gs-answer").value.trim();
-    const prize = Number(document.getElementById("gs-prize").value) || 50;
+    const prize = Number(document.getElementById("gs-prize").value) || 5;
     if (!img.startsWith("https://") || answer.length < 2) { showToast("Necesitas URL https y respuesta secreta"); return; }
     room.send("admin:guess", { img, answer, prize });
     document.getElementById("admin-panel").style.display = "none";
