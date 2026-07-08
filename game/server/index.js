@@ -1,7 +1,7 @@
 /* ============================================================
-   Campus Master Lab IA — Servidor multijugador (Fase 2+)
-   Colyseus: cuentas con registro/login, persistencia de monedas
-   y avatar por jugador, monedas del servidor, chat anti-spam.
+   Campus Master Lab IA — Servidor multijugador (Fase 3)
+   9 salas (Colyseus filterBy roomId), cuentas persistentes,
+   monedas por sala, chat anti-spam, asientos y emotes.
    ============================================================ */
 
 const http = require("http");
@@ -34,26 +34,32 @@ function hashPassword(password, salt) {
 }
 
 const USERNAME_RE = /^[\p{L}\p{N} _.-]{3,14}$/u;
-const AVATARS = ["kai", "vera", "tato", "zoe"];
+const AVATARS = ["kai", "vera", "tato", "zoe", "max", "nina", "leo", "robi"];
+const ROOM_IDS = ["plaza", "cafe", "juegos", "auditorio", "biblioteca", "jardin", "robots", "observatorio", "taller"];
 
-// ---------- Geometría de la plaza (espejo del cliente) ----------
+// ---------- Geometría (espejo del cliente) ----------
 const FLOOR_CX = 950, FLOOR_CY = 610, FLOOR_RX = 590, FLOOR_RY = 370;
 const FOUNTAIN = { x: 945, y: 575, r: 185 };
 
-function isWalkable(x, y) {
-  const dx = (x - FLOOR_CX) / FLOOR_RX;
-  const dy = (y - FLOOR_CY) / FLOOR_RY;
-  if (dx * dx + dy * dy > 1) return false;
-  return Math.hypot(x - FOUNTAIN.x, y - FOUNTAIN.y) > FOUNTAIN.r;
+function makeIsWalkable(hasFountain) {
+  return (x, y) => {
+    const dx = (x - FLOOR_CX) / FLOOR_RX;
+    const dy = (y - FLOOR_CY) / FLOOR_RY;
+    if (dx * dx + dy * dy > 1) return false;
+    if (hasFountain && Math.hypot(x - FOUNTAIN.x, y - FOUNTAIN.y) <= FOUNTAIN.r) return false;
+    return true;
+  };
 }
 
-function randomFloorPoint() {
-  for (let i = 0; i < 200; i++) {
-    const x = FLOOR_CX - FLOOR_RX + Math.random() * FLOOR_RX * 2;
-    const y = FLOOR_CY - FLOOR_RY + Math.random() * FLOOR_RY * 2;
-    if (isWalkable(x, y)) return { x, y };
-  }
-  return { x: 960, y: 880 };
+function makeRandomFloorPoint(isWalkable) {
+  return () => {
+    for (let i = 0; i < 200; i++) {
+      const x = FLOOR_CX - FLOOR_RX + Math.random() * FLOOR_RX * 2;
+      const y = FLOOR_CY - FLOOR_RY + Math.random() * FLOOR_RY * 2;
+      if (isWalkable(x, y)) return { x, y };
+    }
+    return { x: 960, y: 880 };
+  };
 }
 
 // ---------- Estado sincronizado ----------
@@ -66,14 +72,15 @@ defineTypes(Player, {
   flip: "boolean",
   moving: "boolean",
   dir: "string",
+  sit: "number",     // índice de asiento o -1
   score: "number",
 });
 
 class Coin extends Schema {}
 defineTypes(Coin, { x: "number", y: "number" });
 
-class PlazaState extends Schema {}
-defineTypes(PlazaState, {
+class SalaState extends Schema {}
+defineTypes(SalaState, {
   players: { map: Player },
   coins: { map: Coin },
 });
@@ -81,13 +88,15 @@ defineTypes(PlazaState, {
 const COIN_COUNT = 8;
 const PICKUP_DIST = 70;
 const CHAT_MAX_LEN = 120;
-// Anti-spam: máx. 3 mensajes por ventana de 5s y sin repetir el mismo texto
 const CHAT_WINDOW_MS = 5000;
 const CHAT_WINDOW_MAX = 3;
+const EMOTES = ["dance", "laugh", "wave", "heart", "party"];
+const EMOTE_COOLDOWN_MS = 1200;
+const MAX_SEATS = 12;
 
-const onlineUsers = new Set(); // evita doble sesión de la misma cuenta
+const onlineUsers = new Set();
 
-class PlazaRoom extends Room {
+class SalaRoom extends Room {
   async onAuth(client, options) {
     const username = String(options?.username || "").trim();
     const password = String(options?.password || "");
@@ -119,6 +128,12 @@ class PlazaRoom extends Room {
         throw new Error("Nombre o contraseña incorrectos.");
       }
     }
+
+    // Al viajar entre salas hay un leave+join rápido: dar margen a que
+    // la sesión anterior se libere antes de rechazar por doble sesión.
+    for (let i = 0; i < 8 && onlineUsers.has(key); i++) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
     if (onlineUsers.has(key)) {
       throw new Error("Esa cuenta ya está conectada en otro dispositivo.");
     }
@@ -126,31 +141,54 @@ class PlazaRoom extends Room {
     return { key };
   }
 
-  onCreate() {
+  onCreate(options) {
+    this.area = ROOM_IDS.includes(options?.area) ? options.area : "plaza";
     this.maxClients = 40;
-    this.setState(new PlazaState());
+    this.setState(new SalaState());
     this.state.players = new MapSchema();
     this.state.coins = new MapSchema();
     this.coinSeq = 0;
-    this.chatLog = new Map();   // sessionId -> { times: [], last: "" }
+    this.chatLog = new Map();
+    this.lastEmoteAt = new Map();
+
+    this.isWalkable = makeIsWalkable(this.area === "plaza");
+    this.randomFloorPoint = makeRandomFloorPoint(this.isWalkable);
 
     for (let i = 0; i < COIN_COUNT; i++) this.spawnCoin();
+    console.log(`[sala:${this.area}] creada`);
 
-    // Movimiento: el cliente manda su posición; el server valida límites.
     this.onMessage("move", (client, data) => {
       const p = this.state.players.get(client.sessionId);
       if (!p || typeof data !== "object") return;
       const x = Number(data.x), y = Number(data.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      if (!isWalkable(x, y)) return;
+      if (!this.isWalkable(x, y)) return;
       p.x = x;
       p.y = y;
       p.flip = !!data.flip;
       p.moving = !!data.moving;
+      p.sit = -1;
       if (data.dir === "up" || data.dir === "down" || data.dir === "side") p.dir = data.dir;
     });
 
-    // Cambiar de avatar (se persiste en la cuenta)
+    this.onMessage("sit", (client, data) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      const seat = Number(data?.seat);
+      if (!Number.isInteger(seat) || seat < -1 || seat >= MAX_SEATS) return;
+      p.sit = seat;
+      p.moving = false;
+    });
+
+    this.onMessage("emote", (client, data) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p || !EMOTES.includes(data?.type)) return;
+      const now = Date.now();
+      if (now - (this.lastEmoteAt.get(client.sessionId) || 0) < EMOTE_COOLDOWN_MS) return;
+      this.lastEmoteAt.set(client.sessionId, now);
+      this.broadcast("emote", { id: client.sessionId, type: data.type });
+    });
+
     this.onMessage("avatar", (client, data) => {
       const p = this.state.players.get(client.sessionId);
       if (!p || !data || !AVATARS.includes(data.avatar)) return;
@@ -159,7 +197,6 @@ class PlazaRoom extends Room {
       if (u) { u.avatar = data.avatar; saveUsers(); }
     });
 
-    // Recolección de moneda: validada y persistida.
     this.onMessage("collect", (client, data) => {
       const p = this.state.players.get(client.sessionId);
       if (!p || !data || typeof data.id !== "string") return;
@@ -174,7 +211,6 @@ class PlazaRoom extends Room {
       this.clock.setTimeout(() => this.spawnCoin(), 1500);
     });
 
-    // Chat: anti-spam por ventana deslizante + sin mensajes repetidos.
     this.onMessage("chat", (client, data) => {
       const p = this.state.players.get(client.sessionId);
       if (!p || !data || typeof data.text !== "string") return;
@@ -201,7 +237,7 @@ class PlazaRoom extends Room {
   }
 
   spawnCoin() {
-    const { x, y } = randomFloorPoint();
+    const { x, y } = this.randomFloorPoint();
     const coin = new Coin();
     coin.x = x;
     coin.y = y;
@@ -213,15 +249,16 @@ class PlazaRoom extends Room {
     const p = new Player();
     p.name = u.name || "Científic@";
     p.avatar = AVATARS.includes(u.avatar) ? u.avatar : "kai";
-    const spawn = randomFloorPoint();
+    const spawn = this.randomFloorPoint();
     p.x = spawn.x;
     p.y = spawn.y;
     p.flip = false;
     p.moving = false;
     p.dir = "down";
+    p.sit = -1;
     p.score = u.coins || 0;
     this.state.players.set(client.sessionId, p);
-    console.log(`+ ${p.name} (${p.avatar}) — ${this.state.players.size} en la plaza`);
+    console.log(`[sala:${this.area}] + ${p.name} (${p.avatar}) — ${this.state.players.size}`);
   }
 
   onLeave(client) {
@@ -231,13 +268,14 @@ class PlazaRoom extends Room {
     if (client.auth?.key) onlineUsers.delete(client.auth.key);
     this.state.players.delete(client.sessionId);
     this.chatLog.delete(client.sessionId);
-    console.log(`- ${client.sessionId} — ${this.state.players.size} en la plaza`);
+    this.lastEmoteAt.delete(client.sessionId);
+    console.log(`[sala:${this.area}] - ${client.sessionId} — ${this.state.players.size}`);
   }
 }
 
 const port = Number(process.env.PORT) || 2567;
 const gameServer = new Server({ server: http.createServer() });
-gameServer.define("plaza", PlazaRoom);
+gameServer.define("sala", SalaRoom).filterBy(["area"]);
 gameServer.listen(port).then(() => {
-  console.log(`🧪✦ Servidor Campus Master Lab IA escuchando en ws://0.0.0.0:${port}`);
+  console.log(`🧪✦ Servidor Campus Master Lab IA (9 salas) en ws://0.0.0.0:${port}`);
 });
