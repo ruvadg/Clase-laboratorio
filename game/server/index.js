@@ -206,6 +206,17 @@ class SalaRoom extends Room {
     console.log(`[sala:${this.area}] creada`);
 
     const isAdmin = (client) => users[client.auth?.key]?.role === "admin";
+    const give = (p, key, n) => {
+      p.score += n;
+      const u = users[key];
+      if (u) { u.coins = p.score; saveUsers(); }
+    };
+    const eachPlayer = (fn) => {
+      for (const c of this.clients) {
+        const p = this.state.players.get(c.sessionId);
+        if (p) fn(p, c);
+      }
+    };
 
     // --- Panel de Host ---
     this.onMessage("admin:announce", (client, data) => {
@@ -213,6 +224,154 @@ class SalaRoom extends Room {
       const text = String(data?.text || "").trim().slice(0, 140);
       if (!text) return;
       globalBroadcast("announce", { text });
+    });
+
+    // ============ 🌧️ LLUVIA DE MASTER COINS ============
+    this.onMessage("admin:rain", (client) => {
+      if (!isAdmin(client) || this.rainActive) return;
+      this.rainActive = true;
+      globalBroadcast("announce", {
+        text: `🌧️ ¡LLUVIA DE MASTER COINS en ${ROOM_NAMES[this.area]}! ¡Corre a atraparlas!`,
+      });
+      let ticks = 0;
+      const iv = this.clock.setInterval(() => {
+        ticks++;
+        if (this.state.coins.size < 45) { this.spawnCoin(); this.spawnCoin(); }
+        if (ticks >= 24) { iv.clear(); this.rainActive = false; }
+      }, 500);
+    });
+
+    // ============ ⚡ QUIZ SPARK ============
+    this.onMessage("admin:quiz", (client, data) => {
+      if (!isAdmin(client) || this.quiz) return;
+      const q = String(data?.q || "").trim().slice(0, 140);
+      const opts = Array.isArray(data?.opts) ? data.opts.map((o) => String(o || "").trim().slice(0, 40)) : [];
+      const correct = Number(data?.correct);
+      if (!q || opts.length !== 4 || opts.some((o) => !o) || !(correct >= 0 && correct <= 3)) return;
+      this.quiz = { correct };
+      this.broadcast("quiz-start", { q, opts, seconds: 20 });
+      this.clock.setTimeout(() => {
+        if (!this.quiz) return;
+        const winners = [];
+        eachPlayer((p, c) => {
+          const zone = (p.x >= FLOOR_CX ? 1 : 0) + (p.y >= FLOOR_CY ? 2 : 0);
+          if (zone === this.quiz.correct) {
+            winners.push(p.name);
+            give(p, c.auth?.key, 10);
+          }
+        });
+        this.broadcast("quiz-end", { correct: this.quiz.correct, winners });
+        this.quiz = null;
+      }, 20000);
+    });
+
+    // ============ 🤖 ROBI DICE ============
+    const EMOTE_LIST = ["dance", "laugh", "wave", "heart", "party"];
+    const simonRound = () => {
+      if (!this.simon) return;
+      this.simon.round++;
+      this.simon.current = EMOTE_LIST[Math.floor(Math.random() * EMOTE_LIST.length)];
+      this.simon.done = new Set();
+      this.broadcast("simon", { type: this.simon.current, seconds: 6, round: this.simon.round });
+      this.clock.setTimeout(() => {
+        if (!this.simon) return;
+        const out = [];
+        for (const id of [...this.simon.alive]) {
+          if (!this.simon.done.has(id)) {
+            this.simon.alive.delete(id);
+            const p = this.state.players.get(id);
+            if (p) out.push(p.name);
+          }
+        }
+        this.simon.current = null;
+        const aliveNames = [...this.simon.alive]
+          .map((id) => this.state.players.get(id)?.name).filter(Boolean);
+        this.broadcast("simon-out", { out, alive: aliveNames });
+        if (this.simon.alive.size <= 2 || this.simon.round >= 6) {
+          const winners = [];
+          eachPlayer((p, c) => {
+            if (this.simon.alive.has(c.sessionId)) {
+              winners.push(p.name);
+              give(p, c.auth?.key, 30);
+            }
+          });
+          this.broadcast("simon-end", { winners });
+          this.simon = null;
+        } else {
+          this.clock.setTimeout(simonRound, 2600);
+        }
+      }, 6600);
+    };
+    this.onMessage("admin:simon", (client) => {
+      if (!isAdmin(client) || this.simon) return;
+      this.simon = { alive: new Set(this.clients.map((c) => c.sessionId)), round: 0, current: null, done: new Set() };
+      this.broadcast("announce", { text: "🤖 ¡ROBI DICE! Haz el emote que ordene Robi antes de que acabe el tiempo. Los lentos quedan fuera." });
+      this.clock.setTimeout(simonRound, 2500);
+    });
+
+    // ============ 🔥 PISO CALIENTE ============
+    const hotRound = () => {
+      if (!this.hot) return;
+      this.hot.round++;
+      const count = Math.max(1, 4 - (this.hot.round - 1));
+      const zones = [];
+      for (let i = 0; i < count; i++) {
+        const pt = this.randomFloorPoint();
+        zones.push({ x: pt.x, y: pt.y, r: 150 });
+      }
+      this.hot.zones = zones;
+      this.broadcast("hot-round", { zones, seconds: 6, round: this.hot.round });
+      this.clock.setTimeout(() => {
+        if (!this.hot) return;
+        const out = [];
+        for (const id of [...this.hot.alive]) {
+          const p = this.state.players.get(id);
+          const safe = p && this.hot.zones.some((z) => Math.hypot(p.x - z.x, p.y - z.y) <= z.r);
+          if (!safe) {
+            this.hot.alive.delete(id);
+            if (p) out.push(p.name);
+          }
+        }
+        const aliveNames = [...this.hot.alive]
+          .map((id) => this.state.players.get(id)?.name).filter(Boolean);
+        this.broadcast("hot-out", { out, alive: aliveNames });
+        if (this.hot.alive.size <= 2 || this.hot.round >= 4) {
+          const winners = [];
+          eachPlayer((p, c) => {
+            if (this.hot.alive.has(c.sessionId)) {
+              winners.push(p.name);
+              give(p, c.auth?.key, 40);
+            }
+          });
+          this.broadcast("hot-end", { winners });
+          this.hot = null;
+        } else {
+          this.clock.setTimeout(hotRound, 3000);
+        }
+      }, 6600);
+    };
+    this.onMessage("admin:hotfloor", (client) => {
+      if (!isAdmin(client) || this.hot) return;
+      this.hot = { alive: new Set(this.clients.map((c) => c.sessionId)), round: 0, zones: [] };
+      this.broadcast("announce", { text: "🔥 ¡PISO CALIENTE! Cuando aparezcan las zonas seguras, corre a una antes del conteo. Cada ronda hay menos." });
+      this.clock.setTimeout(hotRound, 2500);
+    });
+
+    // ============ 🎨 ADIVINA EL PROMPT ============
+    const normalize = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    this.onMessage("admin:guess", (client, data) => {
+      if (!isAdmin(client) || this.guess) return;
+      const img = String(data?.img || "").trim();
+      const answer = String(data?.answer || "").trim().slice(0, 60);
+      const prize = Math.max(1, Math.min(200, Number(data?.prize) || 50));
+      if (!/^https:\/\//.test(img) || answer.length < 2) return;
+      this.guess = { answer: normalize(answer), prize };
+      this.broadcast("guess-start", { img, seconds: 60, prize });
+      this.clock.setTimeout(() => {
+        if (!this.guess) return;
+        this.broadcast("guess-end", { winner: null, answer });
+        this.guess = null;
+      }, 60000);
     });
 
     this.onMessage("admin:hunt", (client, data) => {
@@ -325,6 +484,10 @@ class SalaRoom extends Room {
       const now = Date.now();
       if (now - (this.lastEmoteAt.get(client.sessionId) || 0) < EMOTE_COOLDOWN_MS) return;
       this.lastEmoteAt.set(client.sessionId, now);
+      if (this.simon?.current && data.type === this.simon.current &&
+          this.simon.alive.has(client.sessionId)) {
+        this.simon.done.add(client.sessionId);
+      }
       this.broadcast("emote", { id: client.sessionId, type: data.type });
     });
 
@@ -372,6 +535,21 @@ class SalaRoom extends Room {
       log.times.push(now);
       log.last = text;
       this.broadcast("chat", { id: client.sessionId, text });
+
+      if (this.guess) {
+        const norm = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (norm.includes(this.guess.answer)) {
+          const key = client.auth?.key;
+          const prize = this.guess.prize;
+          this.guess = null;
+          const gp = this.state.players.get(client.sessionId);
+          if (gp) {
+            give(gp, key, prize);
+            this.broadcast("guess-end", { winner: gp.name, answer: gp.name + " acertó" });
+            globalBroadcast("announce", { text: `🎨 ¡${gp.name} adivinó el prompt y ganó Master Coins!` });
+          }
+        }
+      }
     });
   }
 

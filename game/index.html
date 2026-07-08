@@ -385,6 +385,45 @@
     box-shadow: 0 8px 28px rgba(30,30,255,.5);
   }
 
+  /* --- Banner de mini-juego --- */
+  #game-banner {
+    position: fixed; top: 100px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: none; max-width: min(680px, calc(100vw - 24px));
+    background: rgba(10,10,35,.9);
+    border: 1px solid rgba(53,200,255,.5);
+    color: var(--ml-mist); padding: 13px 22px; border-radius: 16px;
+    text-align: center; backdrop-filter: blur(6px);
+    box-shadow: 0 12px 44px rgba(30,30,255,.4);
+  }
+  #game-banner .gb-title { font-weight: 900; font-size: 15.5px; margin-bottom: 3px; }
+  #game-banner .gb-body { font-size: 13.5px; opacity: .92; line-height: 1.5; }
+  #game-banner .gb-time { margin-top: 5px; font-weight: 900; color: #FFD84D; font-size: 15px; }
+  .qz { display: inline-block; padding: 2px 9px; border-radius: 7px; margin: 2px 3px; font-weight: 800; color: #0A0A23; font-size: 12.5px; }
+  .qzA { background: #ff5959; } .qzB { background: #35c8ff; }
+  .qzC { background: #FFD84D; } .qzD { background: #35d07f; }
+
+  /* --- Adivina el Prompt --- */
+  #guess-box {
+    position: fixed; top: 50%; right: 18px; transform: translateY(-50%);
+    z-index: 6; display: none; width: min(300px, 40vw);
+    background: rgba(10,10,35,.9); border: 1px solid rgba(53,200,255,.5);
+    border-radius: 16px; padding: 12px; text-align: center;
+    backdrop-filter: blur(6px);
+  }
+  #guess-box img { width: 100%; border-radius: 10px; }
+  #guess-box .gtitle { color: var(--ml-mist); font-weight: 900; font-size: 13px; margin-bottom: 8px; }
+  #guess-box .ghint { color: rgba(244,244,255,.65); font-size: 11.5px; margin-top: 7px; }
+
+  #admin-panel .inner { max-height: 90vh; overflow-y: auto; }
+  #admin-panel .mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  #admin-panel .mini-grid .act { font-size: 12px; padding: 10px 4px; }
+  #admin-panel .qrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  #admin-panel select {
+    width: 100%; padding: 10px; border-radius: 10px; margin-top: 6px;
+    border: 1px solid rgba(244,244,255,.25); background: rgba(10,10,35,.85);
+    color: var(--ml-mist); font-size: 13px; outline: none; text-align: center;
+  }
+
   /* ================= CHAT ================= */
   #chat-bar {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
@@ -442,6 +481,12 @@
 <div id="chat-toast"></div>
 <div id="announce"></div>
 <div id="session-badge">🏁 SESIÓN DE EVENTO EN CURSO</div>
+<div id="game-banner"><div class="gb-title"></div><div class="gb-body"></div><div class="gb-time"></div></div>
+<div id="guess-box">
+  <div class="gtitle">🎨 ADIVINA EL PROMPT</div>
+  <img id="guess-img" src="" alt="imagen">
+  <div class="ghint">Escribe tu respuesta en el chat 💬</div>
+</div>
 <div id="leaderboard">
   <div class="inner">
     <h2>🏆 RESULTADOS DE LA SESIÓN</h2>
@@ -463,6 +508,32 @@
         <button id="hunt-go" class="act gold">Esconder Chispa ✦</button>
         <button id="hunt-cancel" class="act ghost">Cancelar búsqueda</button>
       </div>
+    </div>
+    <div class="sec">
+      <h4>🎮 MINI-JUEGOS (en tu sala actual)</h4>
+      <div class="mini-grid">
+        <button id="mg-rain" class="act gold">🌧️ Lluvia</button>
+        <button id="mg-simon" class="act blue">🤖 Robi Dice</button>
+        <button id="mg-hot" class="act blue">🔥 Piso Caliente</button>
+      </div>
+      <input id="qz-q" type="text" maxlength="140" placeholder="⚡ Quiz: escribe la pregunta…" style="margin-top:10px">
+      <div class="qrow">
+        <input id="qz-a" type="text" maxlength="40" placeholder="🔴 Respuesta A">
+        <input id="qz-b" type="text" maxlength="40" placeholder="🔵 Respuesta B">
+        <input id="qz-c" type="text" maxlength="40" placeholder="🟡 Respuesta C">
+        <input id="qz-d" type="text" maxlength="40" placeholder="🟢 Respuesta D">
+      </div>
+      <select id="qz-correct">
+        <option value="0">✅ Correcta: A</option><option value="1">✅ Correcta: B</option>
+        <option value="2">✅ Correcta: C</option><option value="3">✅ Correcta: D</option>
+      </select>
+      <div class="row"><button id="qz-go" class="act blue">⚡ Lanzar Quiz (20s)</button></div>
+      <input id="gs-img" type="text" placeholder="🎨 Adivina: URL https de la imagen…" style="margin-top:10px">
+      <div class="qrow">
+        <input id="gs-answer" type="text" maxlength="60" placeholder="Respuesta secreta">
+        <input id="gs-prize" type="number" min="1" max="200" value="50" placeholder="Premio">
+      </div>
+      <div class="row"><button id="gs-go" class="act blue">🎨 Lanzar Adivina (60s)</button></div>
     </div>
     <div class="sec">
       <h4>🏁 SESIÓN DE EVENTO — marcador para premios reales</h4>
@@ -712,6 +783,56 @@ class PlazaScene extends Phaser.Scene {
       room.onMessage("leaderboard", ({ rows }) => showLeaderboard(rows));
       room.onMessage("hunt-spawn", ({ x, y, prize }) => this.spawnHuntSpark(x, y, prize));
       room.onMessage("hunt-despawn", () => this.despawnHuntSpark());
+      // --- Mini-juegos ---
+      room.onMessage("quiz-start", ({ q, opts, seconds }) => {
+        this.showQuizZones();
+        const letters = ["A", "B", "C", "D"];
+        const body = opts.map((o, i) => `<span class="qz qz${letters[i]}">${letters[i]}</span>${o}`).join(" &nbsp; ");
+        showGameBanner("⚡ QUIZ SPARK — ¡corre a la zona de tu respuesta!", `<b>${q}</b><br>${body}`, seconds);
+      });
+      room.onMessage("quiz-end", ({ correct, winners }) => {
+        this.clearQuizZones();
+        const letters = ["A", "B", "C", "D"];
+        showGameBanner("⚡ RESULTADO", `Respuesta correcta: <b>${letters[correct]}</b><br>` +
+          (winners.length ? `🏆 +10 Master Coins: ${winners.join(", ")}` : "Nadie acertó esta vez 😅"), 6);
+      });
+      room.onMessage("simon", ({ type, seconds, round }) => {
+        const names = { dance: "💃 ¡BAILA!", laugh: "😂 ¡RÍE!", wave: "👋 ¡SALUDA!", heart: "❤️ ¡CORAZÓN!", party: "🎉 ¡FIESTA!" };
+        showGameBanner(`🤖 ROBI DICE — Ronda ${round}`, `<b style="font-size:19px">${names[type]}</b>`, seconds);
+      });
+      room.onMessage("simon-out", ({ out, alive }) => {
+        if (out.includes(playerName)) showToast("¡Quedaste fuera! 👀 Mira cómo termina…");
+        if (out.length) showGameBanner("🤖 ROBI DICE", `Eliminados: ${out.join(", ") || "nadie"}<br>Siguen: ${alive.join(", ")}`, 3);
+      });
+      room.onMessage("simon-end", ({ winners }) => {
+        showGameBanner("🤖 ROBI DICE — FINAL", winners.length
+          ? `🏆 +30 Master Coins: <b>${winners.join(", ")}</b>` : "Robi ganó esta vez 🤖", 7);
+      });
+      room.onMessage("hot-round", ({ zones, seconds, round }) => {
+        this.showHotZones(zones);
+        showGameBanner(`🔥 PISO CALIENTE — Ronda ${round}`, "¡Corre a una zona segura! 🟢", seconds);
+      });
+      room.onMessage("hot-out", ({ out, alive }) => {
+        this.clearHotZones();
+        if (out.includes(playerName)) showToast("¡Te quemaste! 🔥 Espera el final…");
+        showGameBanner("🔥 PISO CALIENTE", `Fuera: ${out.join(", ") || "nadie"}<br>Siguen: ${alive.join(", ")}`, 3);
+      });
+      room.onMessage("hot-end", ({ winners }) => {
+        this.clearHotZones();
+        showGameBanner("🔥 PISO CALIENTE — FINAL", winners.length
+          ? `🏆 +40 Master Coins: <b>${winners.join(", ")}</b>` : "El piso ganó 🔥", 7);
+      });
+      room.onMessage("guess-start", ({ img, seconds, prize }) => {
+        document.getElementById("guess-img").src = img;
+        document.getElementById("guess-box").style.display = "block";
+        showGameBanner("🎨 ADIVINA EL PROMPT", `¿Qué es esta imagen? Escríbelo en el chat — premio: ${prize} Master Coins`, seconds);
+      });
+      room.onMessage("guess-end", ({ winner, answer }) => {
+        document.getElementById("guess-box").style.display = "none";
+        showGameBanner("🎨 ADIVINA EL PROMPT", winner
+          ? `🏆 ¡<b>${winner}</b> adivinó!` : `Nadie adivinó. La respuesta era: <b>${answer}</b>`, 6);
+      });
+
       room.send("hunt-query");
       room.onMessage("collected", ({ id }) => {
         const s = this.coinSprites.get(id);
@@ -761,6 +882,45 @@ class PlazaScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.fitCamera();
     this.scale.on("resize", () => this.fitCamera());
+  }
+
+  /* ---------- Zonas de mini-juegos ---------- */
+  showQuizZones() {
+    this.clearQuizZones();
+    const zones = [
+      { x: 640, y: 430, c: 0xff5959, l: "A" },
+      { x: 1260, y: 430, c: 0x35c8ff, l: "B" },
+      { x: 640, y: 810, c: 0xFFD84D, l: "C" },
+      { x: 1260, y: 810, c: 0x35d07f, l: "D" },
+    ];
+    this.quizZones = zones.map((z) => {
+      const circle = this.add.ellipse(z.x, z.y, 300, 150, z.c, 0.22)
+        .setStrokeStyle(4, z.c, 0.85).setDepth(3);
+      const label = this.add.text(z.x, z.y, z.l, {
+        fontSize: "58px", fontStyle: "bold", color: "#F4F4FF",
+        stroke: "#0A0A23", strokeThickness: 8,
+      }).setOrigin(0.5).setDepth(4);
+      this.tweens.add({ targets: circle, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
+      return [circle, label];
+    }).flat();
+  }
+  clearQuizZones() {
+    (this.quizZones || []).forEach((o) => o.destroy());
+    this.quizZones = null;
+  }
+
+  showHotZones(zones) {
+    this.clearHotZones();
+    this.hotZones = zones.map((z) => {
+      const c = this.add.ellipse(z.x, z.y, z.r * 2, z.r, 0x35d07f, 0.25)
+        .setStrokeStyle(4, 0x35d07f, 0.95).setDepth(3);
+      this.tweens.add({ targets: c, scaleX: 1.06, scaleY: 1.06, alpha: 0.5, duration: 500, yoyo: true, repeat: -1 });
+      return c;
+    });
+  }
+  clearHotZones() {
+    (this.hotZones || []).forEach((o) => o.destroy());
+    this.hotZones = null;
   }
 
   /* ---------- Búsqueda del Tesoro ---------- */
@@ -1027,10 +1187,11 @@ class PlazaScene extends Phaser.Scene {
   }
 
   makeCoinSprite(x, y) {
-    const s = this.add.image(x, y, "coin").setScale(0.85);
+    const s = this.add.image(x, y - 320, "coin").setScale(0.85).setAlpha(0);
     s.baseY = y;
     s.phase = Math.random() * Math.PI * 2;
     s.setDepth(y);
+    this.tweens.add({ targets: s, y, alpha: 1, duration: 550, ease: "bounce.out" });
     return s;
   }
 
@@ -1516,6 +1677,34 @@ function setupAdminPanel() {
     document.getElementById("admin-panel").style.display = "none";
   };
   document.getElementById("hunt-cancel").onclick = () => room.send("admin:hunt-cancel");
+  document.getElementById("mg-rain").onclick = () => {
+    room.send("admin:rain");
+    document.getElementById("admin-panel").style.display = "none";
+  };
+  document.getElementById("mg-simon").onclick = () => {
+    room.send("admin:simon");
+    document.getElementById("admin-panel").style.display = "none";
+  };
+  document.getElementById("mg-hot").onclick = () => {
+    room.send("admin:hotfloor");
+    document.getElementById("admin-panel").style.display = "none";
+  };
+  document.getElementById("qz-go").onclick = () => {
+    const q = document.getElementById("qz-q").value.trim();
+    const opts = ["a", "b", "c", "d"].map((k) => document.getElementById("qz-" + k).value.trim());
+    const correct = Number(document.getElementById("qz-correct").value);
+    if (!q || opts.some((o) => !o)) { showToast("Completa la pregunta y las 4 respuestas"); return; }
+    room.send("admin:quiz", { q, opts, correct });
+    document.getElementById("admin-panel").style.display = "none";
+  };
+  document.getElementById("gs-go").onclick = () => {
+    const img = document.getElementById("gs-img").value.trim();
+    const answer = document.getElementById("gs-answer").value.trim();
+    const prize = Number(document.getElementById("gs-prize").value) || 50;
+    if (!img.startsWith("https://") || answer.length < 2) { showToast("Necesitas URL https y respuesta secreta"); return; }
+    room.send("admin:guess", { img, answer, prize });
+    document.getElementById("admin-panel").style.display = "none";
+  };
   document.getElementById("session-start").onclick = () => {
     room.send("admin:session-start");
     document.getElementById("admin-panel").style.display = "none";
@@ -1530,6 +1719,28 @@ function setupAdminPanel() {
     room.send("admin:announce", { text: t });
     document.getElementById("admin-msg").value = "";
   };
+}
+
+/* ---------- Banner de mini-juego ---------- */
+let gbTimer = null;
+function showGameBanner(title, bodyHtml, seconds) {
+  const el = document.getElementById("game-banner");
+  el.querySelector(".gb-title").textContent = title;
+  el.querySelector(".gb-body").innerHTML = bodyHtml;
+  el.style.display = "block";
+  clearInterval(gbTimer);
+  let left = seconds;
+  const t = el.querySelector(".gb-time");
+  t.textContent = "⏱ " + left + "s";
+  gbTimer = setInterval(() => {
+    left--;
+    if (left <= 0) {
+      clearInterval(gbTimer);
+      el.style.display = "none";
+    } else {
+      t.textContent = "⏱ " + left + "s";
+    }
+  }, 1000);
 }
 
 /* ---------- Leaderboard final ---------- */
